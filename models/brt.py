@@ -3,6 +3,7 @@ from torch import nn
 from torch.nn import utils as nn_utils
 import torch
 from . import encoders
+from .boundary_topo_encoder import BoundaryOperatorTopoEncoder
 from .encoders import PositionalEncoding
 
 
@@ -136,7 +137,9 @@ class BRT(nn.Module):
             input_dim=num_control_pts * 4 + 1 + 7, srf_emb_dim=dmodel, dropout=dropout, hidden_dim=hidden_dim, n_layers=2, n_heads=4
         )
 
-        self.topo_layer = TopoEncoder(vertex_dim=3, edge_dim=dmodel, h_dim=2 * dmodel, dropout=dropout)
+        self.topo_layer = BoundaryOperatorTopoEncoder(
+            edge_dim=dmodel, face_dim=dmodel, hidden_dim=2 * dmodel, dropout=dropout
+        )
         self.vertex_layer = VertexEncoder(input_dim=3, output_dim=dmodel)
         self.fc = nn.Linear(3 * dmodel, dmodel)
         self.transformer = encoders.TransformerEncoderBLock(

@@ -18,7 +18,7 @@ face 序列          → Transformer                                     → 逐
 | Branch | 方案 | 状态 |
 |--------|------|------|
 | `main` | baseline + 本文档 | base |
-| `scheme-a-boundary-mp` | A. 边界算子消息传递 | 进行中 |
+| `scheme-a-boundary-mp` | A. 边界算子消息传递 | forward/backward 已通过 |
 | `scheme-b-hodge-block` | B. Hodge 分解块 | 待做 |
 | `scheme-c-coedge-mp` | C. Coedge 双流形传播 | 待做 |
 | `scheme-d-barycentric-face` | D. 重心感知 FaceEncoder | 待做 |
@@ -41,7 +41,9 @@ face 序列          → Transformer                                     → 逐
 
 **改动文件：** `models/boundary_topo_encoder.py`（新）、`models/brt.py`（切换 topo 层）
 
-**验证：** `tests/test_scheme_a_forward.py` — forward + backward + 梯度非零
+**验证：** `tests/test_scheme_a_forward.py` — forward + backward + 梯度非零（已通过）
+
+**实现：** `models/boundary_topo_encoder.py` 中 `BoundaryOperatorTopoEncoder`，`models/brt.py` 已切换 topo 层。
 
 ---
 

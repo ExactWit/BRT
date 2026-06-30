@@ -5,7 +5,7 @@ import time
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-from lightning.pytorch import seed_everything
+from pytorch_lightning import seed_everything
 import datasets.brt_dataset
 from models.brt_segmentation import SegmentationPL as BRTSegmentation
 import datasets
@@ -54,6 +54,30 @@ parser.add_argument(
     default="segmentation",
     help="Experiment name (used to create folder inside ./results/ to save logs and checkpoints)",
 )
+parser.add_argument(
+    "--resume_from",
+    type=str,
+    default=None,
+    help="Checkpoint path to resume training (e.g. results/.../last.ckpt)",
+)
+parser.add_argument(
+    "--log_name",
+    type=str,
+    default=None,
+    help="TensorBoard logger name (subdir under results/<experiment_name>/). Default: MMDD",
+)
+parser.add_argument(
+    "--log_version",
+    type=str,
+    default=None,
+    help="TensorBoard logger version (run id). Set to existing value to append curves.",
+)
+parser.add_argument(
+    "--max_epochs",
+    type=int,
+    default=1000,
+    help="Maximum training epochs",
+)
 
 args = parser.parse_args()
 
@@ -69,17 +93,25 @@ if not results_path.exists():
 
 month_day = time.strftime("%m%d")
 hour_min_second = time.strftime("%H%M%S")
+log_name = args.log_name or month_day
+log_version = args.log_version or hour_min_second
+run_dir = results_path.joinpath(log_name, log_version)
+
 checkpoint_callback = ModelCheckpoint(
     monitor="val_iou",
     mode='max',
-    dirpath=str(results_path.joinpath(month_day, hour_min_second)),
+    dirpath=str(run_dir),
     filename="best",
     save_last=True,
 )
 
-trainer = Trainer(callbacks=[checkpoint_callback], logger=TensorBoardLogger(
-    str(results_path), name=month_day, version=hour_min_second,
-),devices=[args.gpu],accelerator='gpu')
+trainer = Trainer(
+    callbacks=[checkpoint_callback],
+    logger=TensorBoardLogger(str(results_path), name=log_name, version=log_version),
+    devices=[args.gpu],
+    accelerator='gpu',
+    max_epochs=args.max_epochs,
+)
 
 if args.method == "brt":
     SegmentationModel = BRTSegmentation
@@ -98,22 +130,27 @@ if args.traintest == "train":
     print(
         f"""
 -----------------------------------------------------------------------------------
-BRT Classification
+BRT Segmentation
 -----------------------------------------------------------------------------------
-Logs written to results/{experiment_name}/{month_day}/{hour_min_second}
+Logs written to results/{experiment_name}/{log_name}/{log_version}
 
 To monitor the logs, run:
-tensorboard --logdir results/{experiment_name}/{month_day}/{hour_min_second}
+tensorboard --logdir results/{experiment_name}/{log_name}/{log_version}
 
 The trained model with the best validation loss will be written to:
-results/{experiment_name}/{month_day}/{hour_min_second}/best.ckpt
+results/{experiment_name}/{log_name}/{log_version}/best.ckpt
 -----------------------------------------------------------------------------------
     """
     )
-    if args.checkpoint is not None:
-        model=SegmentationModel.load_from_checkpoint(args.checkpoint)
+    if args.resume_from:
+        model = SegmentationModel(**model_hparams)
+        ckpt_path = args.resume_from
+    elif args.checkpoint is not None:
+        model = SegmentationModel.load_from_checkpoint(args.checkpoint)
+        ckpt_path = None
     else:
         model = SegmentationModel(**model_hparams)
+        ckpt_path = None
     train_data = Dataset(root_dir=args.dataset_dir, split="train",masking_rate=None,load_label_from_file=True)
     val_data = Dataset(root_dir=args.dataset_dir, split="val",masking_rate=None,load_label_from_file=True)
     train_loader = train_data.get_dataloader(
@@ -122,7 +159,7 @@ results/{experiment_name}/{month_day}/{hour_min_second}/best.ckpt
     val_loader = val_data.get_dataloader(
         batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
-    trainer.fit(model, train_loader, val_loader)
+    trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
 else:
     # Test
     assert (

@@ -4,7 +4,7 @@ import time
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-from lightning.pytorch import seed_everything
+from pytorch_lightning import seed_everything
 import datasets.brt_dataset
 from models.brt_classfication import ClassificationPL as BRTClassification
 import datasets

@@ -113,3 +113,53 @@ def list_test_samples_sorted(
 
     rows.sort(key=sort_key)
     return rows
+
+
+def list_test_samples_by_index(
+    dataset_dir: pathlib.Path,
+    run_dir: pathlib.Path | None = None,
+) -> list[dict[str, Any]]:
+    """Return test split entries in native datasplit index order."""
+    with open(dataset_dir / "datasplit.json", encoding="utf-8") as f:
+        split = json.load(f)["test"]
+
+    by_stem: dict[str, dict[str, Any]] = {}
+    if run_dir is not None:
+        per_sample_path = run_dir / PER_SAMPLE_FILENAME
+        if per_sample_path.exists():
+            payload = load_per_sample_results(per_sample_path) or {}
+            for rec in payload.get("samples", []):
+                stem = rec.get("stem")
+                if stem:
+                    by_stem[stem] = rec
+
+    rows: list[dict[str, Any]] = []
+    for index, item in enumerate(split):
+        stem = stem_from_face_path(item["face"])
+        rec = by_stem.get(stem, {})
+        rows.append(
+            {
+                "index": index,
+                "stem": stem,
+                "iou": rec.get("iou"),
+                "acc": rec.get("acc"),
+                "has_metrics": stem in by_stem,
+            }
+        )
+    return rows
+
+
+def resolve_test_sample_index(dataset_dir: pathlib.Path, raw_index: str | int) -> dict[str, Any]:
+    """Resolve user input (e.g. 251 or 0251) to a test split entry."""
+    if isinstance(raw_index, str):
+        text = raw_index.strip()
+        if not text.isdigit():
+            raise ValueError(f"invalid index: {raw_index}")
+        index = int(text, 10)
+    else:
+        index = int(raw_index)
+
+    rows = list_test_samples_by_index(dataset_dir)
+    if index < 0 or index >= len(rows):
+        raise IndexError(f"index {index} out of range (0..{len(rows) - 1})")
+    return rows[index]

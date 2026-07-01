@@ -421,7 +421,54 @@ for row in list_test_samples_sorted(dataset_dir, run_dir):
 PY
 }
 
+resolve_sample_by_index() {
+  local raw_index="$1"
+  python3 - "${DATASET_DIR}" "${SELECTED_RUN_DIR}" "${REPO_DIR}" "${raw_index}" <<'PY'
+import pathlib, sys
+sys.path.insert(0, sys.argv[3])
+from utils.test_per_sample import resolve_test_sample_index
+
+dataset_dir = pathlib.Path(sys.argv[1])
+run_dir = pathlib.Path(sys.argv[2])
+raw_index = sys.argv[4]
+try:
+    row = resolve_test_sample_index(dataset_dir, raw_index)
+except (ValueError, IndexError) as exc:
+    print(f"ERROR: {exc}", file=sys.stderr)
+    sys.exit(1)
+
+print(row["index"])
+print(row["stem"])
+if row.get("iou") is not None and row.get("acc") is not None:
+    print(f"iou={row['iou'] * 100:.1f}\tacc={row['acc'] * 100:.1f}")
+else:
+    print("(no metrics)")
+PY
+}
+
 pick_test_sample() {
+  local index_input metrics_line
+  echo "" >&2
+  echo "按 test 固有索引导出（datasplit 编号，与文件名 fusion360_0251_... 中的 0251 一致）。" >&2
+  echo "输入索引（如 251 / 0251）直接可视化；回车进入按 iou 升序的排行榜。" >&2
+  if [[ -r /dev/tty ]]; then
+    read -r -p "固有索引> " index_input </dev/tty
+  else
+    read -r -p "固有索引> " index_input
+  fi
+
+  if [[ -n "${index_input}" ]]; then
+    mapfile -t resolved < <(resolve_sample_by_index "${index_input}") || {
+      echo "[branch.sh] ERROR: 无效或越界的固有索引: ${index_input}" >&2
+      exit 1
+    }
+    SAMPLE_INDEX="${resolved[0]}"
+    SAMPLE_STEM="${resolved[1]}"
+    metrics_line="${resolved[2]:-}"
+    echo "[branch.sh] 固有索引 ${SAMPLE_INDEX} → ${SAMPLE_STEM}  ${metrics_line}" >&2
+    return 0
+  fi
+
   mapfile -t SAMPLE_LINES < <(list_test_samples "${SELECTED_RUN_DIR}")
   if [[ ${#SAMPLE_LINES[@]} -eq 0 ]]; then
     echo "[branch.sh] ERROR: test 划分为空。"
@@ -535,7 +582,8 @@ run_viz() {
     echo "  说明       : PLY 左 GT / 右 Pred 并排对比"
   fi
   echo "  退出       : 每次导出完成后输入 quit（或 q）退出 viz；回车继续选下一个样本"
-  echo "  样本列表   : 按 test per-sample iou 升序（最差优先）"
+  echo "  样本选择   : 先输入固有索引（如 0251），回车进入 iou 排行榜"
+  echo "  样本列表   : iou 升序时最差优先；固有索引便于跨模型对比同一样本"
   echo "  gt/pred间距: gap=${viz_gap}（相对模型 X 宽度比例，可用 VIZ_GAP 覆盖）"
   echo ""
 

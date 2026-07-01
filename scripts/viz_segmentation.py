@@ -171,6 +171,12 @@ def export_ply_with_face_colors(
             f.write(f"3 {fi[0]} {fi[1]} {fi[2]} {fc[0]} {fc[1]} {fc[2]}\n")
 
 
+def comparison_x_offset(x_min: float, x_max: float, gap_ratio: float) -> float:
+    """Shift Pred so empty space between GT/Pred equals gap_ratio * model X extent."""
+    extent = max(float(x_max - x_min), 1e-6)
+    return extent * (1.0 + gap_ratio)
+
+
 def export_comparison_ply(
     output_path: pathlib.Path,
     verts: np.ndarray,
@@ -179,10 +185,10 @@ def export_comparison_ply(
     gt_labels: np.ndarray,
     pred_labels: np.ndarray,
     palette: np.ndarray,
-    gap: float = 0.3,
+    gap: float = 0.5,
 ) -> None:
     x_min, x_max = verts[:, 0].min(), verts[:, 0].max()
-    offset = (x_max - x_min) + gap
+    offset = comparison_x_offset(x_min, x_max, gap)
 
     verts_gt = verts.copy()
     verts_pred = verts.copy()
@@ -258,7 +264,7 @@ def write_colored_comparison_step(
     pred_labels: np.ndarray,
     step_out: pathlib.Path,
     palette: np.ndarray,
-    gap: float = 0.3,
+    gap: float = 0.5,
 ) -> None:
     from OCC.Core.STEPCAFControl import STEPCAFControl_Writer
     from OCC.Core.STEPControl import STEPControl_AsIs
@@ -270,7 +276,7 @@ def write_colored_comparison_step(
 
     shape = read_step_file(str(step_in))
     xmin, xmax = _shape_x_extent(shape)
-    offset = (xmax - xmin) + gap
+    offset = comparison_x_offset(xmin, xmax, gap)
 
     shape_gt = _copy_shape(shape)
     shape_pred = _translate_shape(_copy_shape(shape), offset)
@@ -375,7 +381,12 @@ def main() -> None:
     parser.add_argument("--format", type=str, default="ply", choices=("ply", "stp"))
     parser.add_argument("--output_dir", type=str, default=None)
     parser.add_argument("--gpu", type=int, default=0)
-    parser.add_argument("--gap", type=float, default=0.3, help="X gap between GT and Pred")
+    parser.add_argument(
+        "--gap",
+        type=float,
+        default=0.5,
+        help="Empty space between GT and Pred as a fraction of model X extent (default 0.5)",
+    )
     parser.add_argument(
         "--print_legend",
         action="store_true",
@@ -466,6 +477,7 @@ def main() -> None:
         "output_file": str(output_file.resolve()),
         "format": args.format,
         "layout": "gt_left_pred_right",
+        "gap_ratio": args.gap,
         "sample_acc": sample_acc,
         "sample_iou": sample_iou,
         "basename": basename,

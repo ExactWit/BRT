@@ -471,36 +471,59 @@ run_test() {
 
 run_viz() {
   local branch="$1"
-  local format
+  local format viz_action
   pick_run "${branch}" "${DATASET_ID}"
   ensure_dataset_ready
-  pick_test_sample
-  pick_from_list format "选择导出格式:" "ply" "stp"
+  pick_from_list format "选择导出格式 (本 session 内固定):" "ply" "stp"
   gpu="${GPU:-0}"
   out_dir="${VIZ_OUTPUT_DIR:-${SELECTED_RUN_DIR}/viz}"
 
-  echo "[branch.sh] viz"
+  echo "[branch.sh] viz session"
   echo "  checkpoint : ${SELECTED_CHECKPOINT}"
-  echo "  sample     : ${SAMPLE_INDEX} (${SAMPLE_STEM})"
   echo "  format     : ${format}"
   echo "  output_dir : ${out_dir}"
   if [[ "${format}" == "stp" ]]; then
-    echo "  说明       : STEP 使用 XCAF 面色（左 GT / 右 Pred），FreeCAD 等可查看"
+    echo "  说明       : STEP 使用 XCAF 面色（左 GT / 右 Pred），FreeCAD / CAD Assistant 可查看"
   else
     echo "  说明       : PLY 左 GT / 右 Pred 并排对比"
   fi
+  echo "  退出       : 每次导出完成后输入 quit（或 q）退出 viz；回车继续选下一个样本"
+  echo ""
 
-  python "${REPO_DIR}/scripts/viz_segmentation.py" \
-    --checkpoint "${SELECTED_CHECKPOINT}" \
-    --dataset_dir "${DATASET_DIR}" \
-    --dataset_id "${DATASET_ID}" \
-    --num_classes "${NUM_CLASSES}" \
-    --step_root "${STEP_ROOT}" \
-    --split test \
-    --index "${SAMPLE_INDEX}" \
-    --format "${format}" \
-    --output_dir "${out_dir}" \
-    --gpu "${gpu}"
+  while true; do
+    pick_test_sample
+
+    echo "[branch.sh] viz"
+    echo "  sample : ${SAMPLE_INDEX} (${SAMPLE_STEM})"
+
+    python "${REPO_DIR}/scripts/viz_segmentation.py" \
+      --checkpoint "${SELECTED_CHECKPOINT}" \
+      --dataset_dir "${DATASET_DIR}" \
+      --dataset_id "${DATASET_ID}" \
+      --num_classes "${NUM_CLASSES}" \
+      --step_root "${STEP_ROOT}" \
+      --split test \
+      --index "${SAMPLE_INDEX}" \
+      --format "${format}" \
+      --output_dir "${out_dir}" \
+      --gpu "${gpu}"
+
+    echo "" >&2
+    if [[ -r /dev/tty ]]; then
+      read -r -p "viz 完成。回车继续选样本，输入 quit 退出: " viz_action </dev/tty
+    else
+      read -r -p "viz 完成。回车继续选样本，输入 quit 退出: " viz_action
+    fi
+    case "${viz_action}" in
+      quit|Quit|QUIT|q|Q)
+        echo "[branch.sh] 退出 viz session。"
+        break
+        ;;
+      *)
+        echo "" >&2
+        ;;
+    esac
+  done
 }
 
 main() {

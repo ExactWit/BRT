@@ -173,7 +173,8 @@ results/<dataset>/<date>/<tag>/
 | `BRANCH_WORKFLOW` | `df34aeb` | scheme 分支工作流约定 |
 | `RESULTS_LAYOUT_V2` | `10cc0c7` | results 路径 `dataset/date/tag` + `--run_tag` |
 | `VIZ_METRICS_IN_FILENAME` | `c919f61` | viz 输出文件名含 `iou` / `acc`（已 supersede） |
-| `VIZ_COMPARE_V1` | `b680039` | GT+Pred 单文件并排；新文件名格式；STEP 面色 |
+| `VIZ_COMPARE_V1` | `b680039` | GT+Pred 单文件并排；新文件名格式 |
+| `VIZ_STEP_COLOR_FIX` | `VIZ_STEP_COLOR_FIX` | STEP 正确写入 XCAF 面色（SetColorMode + AddShape 后设色） |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -255,7 +256,16 @@ results/<dataset>/<date>/<tag>/
 
 - 布局：**左侧 Ground Truth | 右侧 Prediction**
 - **PLY**：三角面色（MeshLab 等）
-- **STEP**：XCAF 面色（**支持染色**；FreeCAD 等查看器可显示左右两件分色模型）
+- **STEP**：XCAF AP214/AP242 **面色**（左 GT / 右 Pred）；需用修复后的导出（锚点 `VIZ_STEP_COLOR_FIX`）
+
+**CAD Assistant 查看 STEP 面色：**
+
+1. 重新导出：旧版 viz 生成的 `.stp` **未写入颜色**，需用新代码重跑 viz。
+2. 显示模式：右键或 View → 选 **Smoothly Shaded**（平滑着色），不要 Wireframe。
+3. Settings → Viewer：可将 **Highlight color effect** 改为非默认，避免选中时盖住本色；**Highlighting of selected parts** 可设为 Wireframe。
+4. 打开后可在结构树看到两件（GT 左 / Pred 右）；若仍单色，优先用 **PLY**（颜色最可靠）。
+
+**FreeCAD**：导入 STEP 后通常可直接看到面颜色。
 
 **文件名**：
 

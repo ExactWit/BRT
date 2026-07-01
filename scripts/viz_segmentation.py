@@ -227,16 +227,29 @@ def _shape_x_extent(shape) -> tuple[float, float]:
     return float(xmin), float(xmax)
 
 
-def _color_faces(color_tool, shape, labels: np.ndarray, palette: np.ndarray) -> None:
+def _color_shape_faces(
+    color_tool,
+    shape,
+    labels: np.ndarray,
+    palette: np.ndarray,
+) -> None:
     from OCC.Core.Quantity import Quantity_Color, Quantity_TOC_RGB
-    from OCC.Extend.TopologyUtils import TopologyExplorer
+    from OCC.Core.TopAbs import TopAbs_FACE
+    from OCC.Core.TopExp import TopExp_Explorer
+    from OCC.Core.TopoDS import topods
+    from OCC.Core.XCAFDoc import XCAFDoc_ColorSurf
 
-    for face_idx, face in enumerate(TopologyExplorer(shape, ignore_orientation=True).faces()):
+    exp = TopExp_Explorer(shape, TopAbs_FACE)
+    face_idx = 0
+    while exp.More():
         if face_idx >= len(labels):
             break
+        face = topods.Face(exp.Current())
         rgb = class_color(int(labels[face_idx]), palette).astype(float) / 255.0
         color = Quantity_Color(float(rgb[0]), float(rgb[1]), float(rgb[2]), Quantity_TOC_RGB)
-        color_tool.SetColor(face, color, 1)
+        color_tool.SetColor(face, color, XCAFDoc_ColorSurf)
+        face_idx += 1
+        exp.Next()
 
 
 def write_colored_comparison_step(
@@ -248,6 +261,7 @@ def write_colored_comparison_step(
     gap: float = 0.3,
 ) -> None:
     from OCC.Core.STEPCAFControl import STEPCAFControl_Writer
+    from OCC.Core.STEPControl import STEPControl_AsIs
     from OCC.Core.TCollection import TCollection_ExtendedString
     from OCC.Core.TDocStd import TDocStd_Document
     from OCC.Core.XCAFApp import XCAFApp_Application
@@ -267,14 +281,15 @@ def write_colored_comparison_step(
     shape_tool = XCAFDoc_DocumentTool.ShapeTool(doc.Main())
     color_tool = XCAFDoc_DocumentTool.ColorTool(doc.Main())
 
-    _color_faces(color_tool, shape_gt, gt_labels, palette)
-    shape_tool.AddShape(shape_gt)
+    label_gt = shape_tool.AddShape(shape_gt)
+    _color_shape_faces(color_tool, shape_tool.GetShape(label_gt), gt_labels, palette)
 
-    _color_faces(color_tool, shape_pred, pred_labels, palette)
-    shape_tool.AddShape(shape_pred)
+    label_pred = shape_tool.AddShape(shape_pred)
+    _color_shape_faces(color_tool, shape_tool.GetShape(label_pred), pred_labels, palette)
 
     writer = STEPCAFControl_Writer()
-    writer.Transfer(doc, 1)
+    writer.SetColorMode(True)
+    writer.Transfer(doc, STEPControl_AsIs)
     step_out.parent.mkdir(parents=True, exist_ok=True)
     if writer.Write(str(step_out)) != 1:
         raise RuntimeError(f"Failed to write colored STEP: {step_out}")

@@ -521,6 +521,8 @@ run_viz() {
   ensure_test_per_sample "${branch}"
   pick_from_list format "选择导出格式 (本 session 内固定):" "ply" "stp"
   gpu="${GPU:-0}"
+  local viz_gap
+  viz_gap="${VIZ_GAP:-0.5}"
   out_dir="${VIZ_OUTPUT_DIR:-${SELECTED_RUN_DIR}/viz}"
 
   echo "[branch.sh] viz session"
@@ -534,6 +536,7 @@ run_viz() {
   fi
   echo "  退出       : 每次导出完成后输入 quit（或 q）退出 viz；回车继续选下一个样本"
   echo "  样本列表   : 按 test per-sample iou 升序（最差优先）"
+  echo "  gt/pred间距: gap=${viz_gap}（相对模型 X 宽度比例，可用 VIZ_GAP 覆盖）"
   echo ""
 
   while true; do
@@ -552,6 +555,7 @@ run_viz() {
       --index "${SAMPLE_INDEX}" \
       --format "${format}" \
       --output_dir "${out_dir}" \
+      --gap "${viz_gap}" \
       --gpu "${gpu}"
 
     echo "" >&2

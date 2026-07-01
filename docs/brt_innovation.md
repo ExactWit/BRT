@@ -177,6 +177,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_STEP_COLOR_FIX` | `a74e983` | STEP 正确写入 XCAF 面色（SetColorMode + AddShape 后设色） |
 | `VIZ_LOOP` | `32ac3b0` | branch.sh viz 循环导出，quit 退出 |
 | `TEST_PER_SAMPLE` | `8fcd876` | test 写 per-sample iou/acc；viz 按 iou 升序列表 |
+| `VIZ_COMPARE_GAP` | `VIZ_COMPARE_GAP` | GT/Pred 间距改为相对 X 宽度比例（默认 0.5） |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -260,7 +261,7 @@ results/<dataset>/<date>/<tag>/
 
 **单文件 GT+Pred 并排**（自 infra 锚点 `b680039` 起）：
 
-- 布局：**左侧 Ground Truth | 右侧 Prediction**
+- 布局：**左侧 Ground Truth | 右侧 Prediction**（中间空隙 = 模型 X 宽度 × `gap`，默认 `0.5`）
 - **PLY**：三角面色（MeshLab 等）
 - **STEP**：XCAF AP214/AP242 **面色**（左 GT / 右 Pred）；需用修复后的导出（锚点 `VIZ_STEP_COLOR_FIX`）
 
@@ -302,4 +303,7 @@ RUN_TAG=schemeb LOG_NAME=0701 BATCH_SIZE=8 GPU=0 bash scripts/branch.sh
 
 # 直接 train_360（tag 由当前 git 分支推导）
 EXPERIMENT_NOTE="ablation lr" bash scripts/train_360.sh
+
+# viz 加大 GT/Pred 间距（默认为模型宽度的 50%）
+VIZ_GAP=0.7 bash scripts/branch.sh
 ```

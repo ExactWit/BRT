@@ -241,7 +241,7 @@ results/<dataset>/<date>/<tag>/
 
 `test` / `viz` 会按当前 **branch + dataset** 过滤 `results/` 下的实验供选择；列表中会显示备注摘要（`note=...`）。
 
-**viz 样本选择（自 infra 锚点 `VIZ_INDEX_LOOKUP` 起）**：
+**viz 样本选择（自 infra 锚点 `4803b52` 起）**：
 
 1. **固有索引**：先提示输入 test 划分编号（与导出文件名 `fusion360_0251_...` 中的 `0251` 一致），便于**跨模型/跨 run 对比同一样本**；直接回车则进入下一步。
 2. **iou 排行榜**：按 per-sample iou 升序列表（最差优先）。

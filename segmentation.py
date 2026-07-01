@@ -60,7 +60,7 @@ parser.add_argument(
     "--experiment_name",
     type=str,
     default="segmentation",
-    help="Experiment name (used to create folder inside ./results/ to save logs and checkpoints)",
+    help="Dataset bucket under results/ (e.g. fusion360_seg). Legacy runs may use branch_dataset names.",
 )
 parser.add_argument(
     "--resume_from",
@@ -72,13 +72,19 @@ parser.add_argument(
     "--log_name",
     type=str,
     default=None,
-    help="TensorBoard logger name (subdir under results/<experiment_name>/). Default: MMDD",
+    help="Date subdir under results/<dataset>/ (MMDD). Default: today",
 )
 parser.add_argument(
     "--log_version",
     type=str,
     default=None,
-    help="TensorBoard logger version (run id). Set to existing value to append curves.",
+    help="Legacy run id (often HHMMSS). Prefer --run_tag for new experiments.",
+)
+parser.add_argument(
+    "--run_tag",
+    type=str,
+    default=None,
+    help="Scheme tag under results/<dataset>/<date>/ (e.g. schemeb). Default: HHMMSS if unset.",
 )
 parser.add_argument(
     "--max_epochs",
@@ -127,8 +133,9 @@ if not results_path.exists():
 month_day = time.strftime("%m%d")
 hour_min_second = time.strftime("%H%M%S")
 log_name = args.log_name or month_day
-log_version = args.log_version or hour_min_second
+log_version = args.run_tag or args.log_version or hour_min_second
 run_dir = results_path.joinpath(log_name, log_version)
+run_tag = log_version
 
 
 def write_json(path: pathlib.Path, payload: dict) -> None:
@@ -157,6 +164,7 @@ def write_experiment_metadata() -> None:
         experiment_name=experiment_name,
         log_name=log_name,
         log_version=log_version,
+        run_tag=run_tag,
         dataset_dir=args.dataset_dir,
         dataset_id=args.dataset_id,
         git_branch=args.git_branch,
@@ -201,13 +209,13 @@ if args.traintest == "train":
 -----------------------------------------------------------------------------------
 BRT Segmentation
 -----------------------------------------------------------------------------------
-Logs written to results/{experiment_name}/{log_name}/{log_version}
+Logs written to results/{experiment_name}/{log_name}/{run_tag}
 
 To monitor the logs, run:
-tensorboard --logdir results/{experiment_name}/{log_name}/{log_version}
+tensorboard --logdir results/{experiment_name}/{log_name}/{run_tag}
 
 The trained model with the best validation loss will be written to:
-results/{experiment_name}/{log_name}/{log_version}/best.ckpt
+results/{experiment_name}/{log_name}/{run_tag}/best.ckpt
 -----------------------------------------------------------------------------------
     """
     )

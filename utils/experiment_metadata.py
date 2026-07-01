@@ -116,6 +116,7 @@ def build_experiment_metadata(
     experiment_name: str,
     log_name: str,
     log_version: str,
+    run_tag: str | None = None,
     dataset_dir: str,
     dataset_id: str | None = None,
     git_branch: str | None = None,
@@ -126,13 +127,16 @@ def build_experiment_metadata(
     created_at = time.strftime("%Y-%m-%dT%H:%M:%S")
     train_args = train_args or {}
     processed_dir = pathlib.Path(dataset_dir)
+    tag = run_tag or log_version
 
     metadata = {
         "schema_version": SCHEMA_VERSION,
+        "results_layout": "dataset/date/tag",
         "run": {
             "experiment_name": experiment_name,
             "log_name": log_name,
             "log_version": log_version,
+            "run_tag": tag,
             "run_dir": str(run_dir.resolve()),
             "created_at": created_at,
             "created_at_unix": int(time.time()),

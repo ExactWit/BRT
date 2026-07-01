@@ -6,6 +6,9 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS_DIR="${REPO_DIR}/results"
 CONDA_SH="${HOME}/software/miniconda3/etc/profile.d/conda.sh"
 
+# shellcheck source=scripts/run_layout.sh
+source "${REPO_DIR}/scripts/run_layout.sh"
+
 if [[ -f "${CONDA_SH}" ]]; then
   # shellcheck source=/dev/null
   source "${CONDA_SH}"
@@ -51,7 +54,7 @@ pick_from_list() {
 }
 
 sanitize_name() {
-  echo "$1" | sed 's#[/ ]#_#g'
+  sanitize_run_name "$1"
 }
 
 list_git_branches() {
@@ -88,6 +91,7 @@ configure_dataset() {
     360)
       DATASET_ID="360"
       DATASET_DIR="${DATASET_DIR:-/data/hdd/datasets/s2.0.0/processed/brt}"
+      RESULTS_DATASET_NAME="fusion360_seg"
       SPLIT_SOURCE_JSON="${SPLIT_SOURCE_JSON:-/data/hdd/datasets/s2.0.0/processed/dataset.json}"
       STEP_ROOT="${STEP_ROOT:-/data/hdd/datasets/s2.0.0/breps/step}"
       NUM_CLASSES="${NUM_CLASSES:-8}"
@@ -97,6 +101,7 @@ configure_dataset() {
     mechcad)
       DATASET_ID="mechcad"
       DATASET_DIR="${DATASET_DIR:-/data/hdd/datasets/mechcad/processed}"
+      RESULTS_DATASET_NAME="mechcad_seg"
       SPLIT_SOURCE_JSON="${SPLIT_SOURCE_JSON:-}"
       STEP_ROOT="${STEP_ROOT:-/data/hdd/datasets/mechcad/mechcad}"
       NUM_CLASSES="${NUM_CLASSES:-25}"
@@ -369,8 +374,10 @@ run_train() {
   ensure_dataset_ready
   local branch_tag
   branch_tag="$(sanitize_name "${branch}")"
-  local experiment_name
-  experiment_name="${EXPERIMENT_NAME:-${branch_tag}_${DATASET_ID}}"
+  local experiment_name run_tag log_date
+  experiment_name="${EXPERIMENT_NAME:-${RESULTS_DATASET_NAME}}"
+  log_date="${LOG_NAME:-$(date +%m%d)}"
+  run_tag="$(resolve_run_tag "${branch}")"
   local batch_size num_workers gpu max_epochs experiment_note
   batch_size="${BATCH_SIZE:-16}"
   num_workers="${NUM_WORKERS:-4}"
@@ -396,10 +403,15 @@ run_train() {
     --gpu "${gpu}"
     --num_control_pts "${NUM_CONTROL_PTS}"
     --experiment_name "${experiment_name}"
+    --log_name "${log_date}"
+    --run_tag "${run_tag}"
     --max_epochs "${max_epochs}"
     --git_branch "${branch}"
     --dataset_id "${DATASET_ID}"
   )
+  if [[ -n "${RESUME_FROM:-}" ]]; then
+    train_args+=(--resume_from "${RESUME_FROM}")
+  fi
   if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
     train_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
   fi
@@ -411,7 +423,7 @@ run_train() {
   echo "  branch          : ${branch}"
   echo "  dataset         : ${DATASET_ID}"
   echo "  dataset_dir     : ${DATASET_DIR}"
-  echo "  experiment_name : ${experiment_name}"
+  echo "  results_path    : results/${experiment_name}/${log_date}/${run_tag}"
   if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
     echo "  split_source    : ${SPLIT_SOURCE_JSON}"
   fi

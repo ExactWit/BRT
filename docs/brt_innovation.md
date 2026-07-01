@@ -24,7 +24,7 @@ face 序列          → Transformer                                     → 逐
 
 1. 新方案分支从 **main 最新公共 infra** 分出，不要从旧 scheme 分支再分。
 2. scheme 分支需要公共更新时，在分支上执行 `git merge main`（不要 cherry-pick 多文件）。
-3. 公共 infra 锚点（含 branch.sh、experiment metadata、viz）：`82f4ba0`（`feat: branch control`）。
+3. 公共 infra 锚点（含 branch.sh、experiment metadata、viz、**results 路径 layout**）：见下方「公共 infra 锚点」一节（随 main 更新）。
 
 ```bash
 # 新建方案 C
@@ -146,11 +146,41 @@ bash scripts/branch.sh
 2. 选择数据集：`360` | `mechcad`
 3. 选择操作：`train` | `test` | `viz`
 
+### 训练结果路径（新实验）
+
+自公共 infra 锚点 `RESULTS_LAYOUT_V2` 起，**新 train** 使用：
+
+```text
+results/<dataset>/<date>/<tag>/
+```
+
+| 段 | 含义 | 示例 |
+|----|------|------|
+| `<dataset>` | 数据集桶 | `fusion360_seg`、`mechcad_seg` |
+| `<date>` | 训练日 MMDD | `0701` |
+| `<tag>` | 方案/分支标签 | `schemea`、`schemeb`、`baseline` |
+
+示例：`results/fusion360_seg/0701/schemeb/`（TensorBoard、checkpoint、metadata 均在此目录）。
+
+- `branch.sh` / `train_360.sh` 会自动设置；可用环境变量覆盖：`EXPERIMENT_NAME`、`LOG_NAME`、`RUN_TAG`。
+- 同一天同 tag 目录已存在且非 resume 时，自动追加 `_HHMMSS` 后缀避免覆盖。
+- **历史实验**（如 `results/scheme-a-boundary-mp_360/0701/...`）保持不变，test/viz 仍可被选到。
+
+### 公共 infra 锚点
+
+| 锚点 | 提交 | 说明 |
+|------|------|------|
+| `BRANCH_WORKFLOW` | `df34aeb` | scheme 分支工作流约定 |
+| `RESULTS_LAYOUT_V2` | `RESULTS_LAYOUT_V2` | results 路径 `dataset/date/tag` + `--run_tag` |
+| （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
+
+新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
+
 ### 实验元数据
 
 每次 **train** 都会在 run 目录写入：
 
-`results/<experiment_name>/<log_name>/<log_version>/experiment_metadata.json`
+`results/<dataset>/<date>/<tag>/experiment_metadata.json`
 
 （通过 `branch.sh`、`train_360.sh` 或直接 `python segmentation.py train` 均可；未传 `--git_branch` 时会自动从当前仓库读取。）
 
@@ -159,15 +189,17 @@ bash scripts/branch.sh
 ```json
 {
   "schema_version": 1,
+  "results_layout": "dataset/date/tag",
   "run": {
-    "experiment_name": "scheme-a-boundary-mp_360",
+    "experiment_name": "fusion360_seg",
     "log_name": "0701",
-    "log_version": "120000",
-    "run_dir": "/abs/path/to/results/...",
+    "run_tag": "schemeb",
+    "log_version": "schemeb",
+    "run_dir": "/abs/path/to/results/fusion360_seg/0701/schemeb",
     "created_at": "2026-07-01T12:00:00"
   },
   "git": {
-    "branch": "scheme-a-boundary-mp",
+    "branch": "scheme-b-hodge-block",
     "commit": "908a912",
     "commit_full": "...",
     "dirty": false,
@@ -204,10 +236,10 @@ bash scripts/branch.sh
 
 ### 数据集默认路径
 
-| dataset | processed | STEP 根目录 | num_classes |
-|---------|-----------|-------------|-------------|
-| `360` | `/data/hdd/datasets/s2.0.0/processed/brt` | `.../breps/step` | 8 |
-| `mechcad` | `/data/hdd/datasets/mechcad/processed` | `.../mechcad` | 25 |
+| dataset | results 桶 | processed | STEP 根目录 | num_classes |
+|---------|------------|-----------|-------------|-------------|
+| `360` | `fusion360_seg` | `/data/hdd/datasets/s2.0.0/processed/brt` | `.../breps/step` | 8 |
+| `mechcad` | `mechcad_seg` | `/data/hdd/datasets/mechcad/processed` | `.../mechcad` | 25 |
 
 ### viz 输出
 
@@ -221,5 +253,9 @@ bash scripts/branch.sh
 ### 环境变量（可选）
 
 ```bash
-BATCH_SIZE=8 GPU=0 MAX_EPOCHS=100 EXPERIMENT_NAME=my_exp bash scripts/branch.sh
+# 覆盖 results/<dataset>/<date>/<tag>
+RUN_TAG=schemeb LOG_NAME=0701 BATCH_SIZE=8 GPU=0 bash scripts/branch.sh
+
+# 直接 train_360（tag 由当前 git 分支推导）
+EXPERIMENT_NOTE="ablation lr" bash scripts/train_360.sh
 ```

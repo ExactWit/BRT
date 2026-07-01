@@ -180,7 +180,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_LOOP` | `32ac3b0` | branch.sh viz 循环导出，quit 退出 |
 | `TEST_PER_SAMPLE` | `8fcd876` | test 写 per-sample iou/acc；viz 按 iou 升序列表 |
 | `VIZ_COMPARE_GAP` | `6ede060` | GT/Pred 间距改为相对 X 宽度比例（默认 0.5） |
-| `VIZ_INDEX_LOOKUP` | `VIZ_INDEX_LOOKUP` | viz 支持固有索引直达，回车进 iou 榜 |
+| `VIZ_INDEX_LOOKUP` | `4803b52` | viz 支持固有索引直达，回车进 iou 榜 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -243,7 +243,7 @@ results/<dataset>/<date>/<tag>/
 
 `test` / `viz` 会按当前 **branch + dataset** 过滤 `results/` 下的实验供选择；列表中会显示备注摘要（`note=...`）。
 
-**viz 样本选择（自 infra 锚点 `VIZ_INDEX_LOOKUP` 起）**：
+**viz 样本选择（自 infra 锚点 `4803b52` 起）**：
 
 1. **固有索引**：先提示输入 test 划分编号（与导出文件名 `fusion360_0251_...` 中的 `0251` 一致），便于**跨模型/跨 run 对比同一样本**；直接回车则进入下一步。
 2. **iou 排行榜**：按 per-sample iou 升序列表（最差优先）。

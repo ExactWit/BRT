@@ -148,7 +148,7 @@ bash scripts/branch.sh
 
 ### 训练结果路径（新实验）
 
-自公共 infra 锚点 `RESULTS_LAYOUT_V2` 起，**新 train** 使用：
+自公共 infra 锚点 `10cc0c7` 起，**新 train** 使用：
 
 ```text
 results/<dataset>/<date>/<tag>/
@@ -171,7 +171,7 @@ results/<dataset>/<date>/<tag>/
 | 锚点 | 提交 | 说明 |
 |------|------|------|
 | `BRANCH_WORKFLOW` | `df34aeb` | scheme 分支工作流约定 |
-| `RESULTS_LAYOUT_V2` | `RESULTS_LAYOUT_V2` | results 路径 `dataset/date/tag` + `--run_tag` |
+| `RESULTS_LAYOUT_V2` | `10cc0c7` | results 路径 `dataset/date/tag` + `--run_tag` |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。

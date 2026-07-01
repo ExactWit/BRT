@@ -1,5 +1,6 @@
 #segmentation.py
 import argparse
+import json
 import pathlib
 import time
 from pytorch_lightning import Trainer
@@ -11,6 +12,13 @@ from models.brt_segmentation import SegmentationPL as BRTSegmentation
 import datasets
 
 import torch
+
+from utils.experiment_metadata import (
+    build_experiment_metadata,
+    collect_datasplit_info,
+    collect_git_info,
+    write_experiment_metadata as persist_experiment_metadata,
+)
 
 parser = argparse.ArgumentParser(
     "Segmentation")
@@ -78,8 +86,33 @@ parser.add_argument(
     default=1000,
     help="Maximum training epochs",
 )
+parser.add_argument(
+    "--git_branch",
+    type=str,
+    default=None,
+    help="Git branch name recorded in experiment metadata",
+)
+parser.add_argument(
+    "--dataset_id",
+    type=str,
+    default=None,
+    help="Dataset id recorded in experiment metadata (e.g. 360, mechcad)",
+)
+parser.add_argument(
+    "--experiment_note",
+    type=str,
+    default=None,
+    help="Free-form note for this experiment run (recorded in metadata)",
+)
+parser.add_argument(
+    "--split_source_json",
+    type=str,
+    default=None,
+    help="Original split definition JSON (e.g. BRepNet dataset.json); optional",
+)
 
 args = parser.parse_args()
+repo_dir = pathlib.Path(__file__).parent
 
 experiment_name = args.experiment_name
 
@@ -96,6 +129,42 @@ hour_min_second = time.strftime("%H%M%S")
 log_name = args.log_name or month_day
 log_version = args.log_version or hour_min_second
 run_dir = results_path.joinpath(log_name, log_version)
+
+
+def write_json(path: pathlib.Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+
+
+def write_experiment_metadata() -> None:
+    if args.traintest != "train":
+        return
+    train_args = {
+        "batch_size": args.batch_size,
+        "max_epochs": args.max_epochs,
+        "gpu": args.gpu,
+        "num_workers": args.num_workers,
+        "num_classes": args.num_classes,
+        "num_control_pts": args.num_control_pts,
+        "method": args.method,
+        "precision": args.precision,
+        "resume_from": args.resume_from,
+    }
+    metadata = build_experiment_metadata(
+        repo_dir=repo_dir,
+        run_dir=run_dir,
+        experiment_name=experiment_name,
+        log_name=log_name,
+        log_version=log_version,
+        dataset_dir=args.dataset_dir,
+        dataset_id=args.dataset_id,
+        git_branch=args.git_branch,
+        note=args.experiment_note,
+        split_source_json=args.split_source_json,
+        train_args=train_args,
+    )
+    persist_experiment_metadata(run_dir / "experiment_metadata.json", metadata)
 
 checkpoint_callback = ModelCheckpoint(
     monitor="val_iou",
@@ -151,6 +220,8 @@ results/{experiment_name}/{log_name}/{log_version}/best.ckpt
     else:
         model = SegmentationModel(**model_hparams)
         ckpt_path = None
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_experiment_metadata()
     train_data = Dataset(root_dir=args.dataset_dir, split="train",masking_rate=None,load_label_from_file=True)
     val_data = Dataset(root_dir=args.dataset_dir, split="val",masking_rate=None,load_label_from_file=True)
     train_loader = train_data.get_dataloader(
@@ -172,6 +243,37 @@ else:
     model = SegmentationModel.load_from_checkpoint(args.checkpoint)
     results = trainer.test(model=model, dataloaders=[
                            test_loader], verbose=True)
+    metrics = results[0] if results else {}
+    ckpt_path = pathlib.Path(args.checkpoint)
+    run_dir_for_test = ckpt_path.parent
+    exp_meta_path = run_dir_for_test / "experiment_metadata.json"
+    experiment_ref = None
+    if exp_meta_path.exists():
+        with open(exp_meta_path, encoding="utf-8") as f:
+            experiment_ref = json.load(f)
+    test_metadata = {
+        "schema_version": 1,
+        "tested_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "checkpoint": str(ckpt_path.resolve()),
+        "git": collect_git_info(repo_dir, branch=args.git_branch),
+        "dataset": {
+            "id": args.dataset_id,
+            "processed_dir": str(pathlib.Path(args.dataset_dir).resolve()),
+        },
+        "datasplit": collect_datasplit_info(
+            pathlib.Path(args.dataset_dir),
+            dataset_id=args.dataset_id,
+            split_source_json=args.split_source_json,
+        ),
+        "metrics": metrics,
+        "experiment_metadata_path": str(exp_meta_path.resolve()) if exp_meta_path.exists() else None,
+        "experiment_run": (experiment_ref or {}).get("run"),
+        # legacy flat keys for older tooling
+        "git_branch": args.git_branch,
+        "dataset": args.dataset_id,
+        "dataset_dir": args.dataset_dir,
+    }
+    write_json(run_dir_for_test / "test_metadata.json", test_metadata)
     print(
-        f"Classfication Loss on test set: {results[0]['test_loss']}"
+        f"Classfication Loss on test set: {metrics.get('test_loss')}"
     )

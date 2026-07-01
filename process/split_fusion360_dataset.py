@@ -1,7 +1,12 @@
 import argparse
 import json
 import os
+import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+from utils.datasplit_meta import write_datasplit_meta
 
 
 def build_item(stem, triangles_dir, topo_dir, seg_dir):
@@ -116,7 +121,17 @@ def main():
     with open(args.output_json, "w") as f:
         json.dump(splits, f, indent=2)
 
+    counts = {split_name: len(splits[split_name]) for split_name in splits}
+    meta_path = write_datasplit_meta(
+        Path(args.output_json),
+        dataset_id="360",
+        split_source_json=args.split_json,
+        counts=counts,
+        skipped_total=total_missing,
+    )
+
     print(f"Wrote {args.output_json} (total skipped: {total_missing})")
+    print(f"Wrote {meta_path}")
 
 
 if __name__ == "__main__":

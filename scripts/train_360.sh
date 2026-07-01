@@ -13,6 +13,7 @@ set -eo pipefail
 
 DATASET_DIR="${DATASET_DIR:-/data/hdd/datasets/s2.0.0}"
 PROCESSED_DIR="${PROCESSED_DIR:-${DATASET_DIR}/processed/brt}"
+SPLIT_SOURCE_JSON="${SPLIT_SOURCE_JSON:-${DATASET_DIR}/processed/dataset.json}"
 REPO_DIR="${HOME}/workspace/repo/BRT"
 
 NUM_CLASSES="${NUM_CLASSES:-8}"       # segment_names.json 共 8 类
@@ -44,19 +45,31 @@ fi
 cd "${REPO_DIR}"
 mkdir -p logs
 
+GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+TRAIN_ARGS=(
+  --num_classes "${NUM_CLASSES}"
+  --dataset_dir "${PROCESSED_DIR}"
+  --batch_size "${BATCH_SIZE}"
+  --num_workers "${NUM_WORKERS}"
+  --gpu "${GPU}"
+  --num_control_pts "${NUM_CONTROL_PTS}"
+  --experiment_name "${EXPERIMENT_NAME}"
+  --git_branch "${GIT_BRANCH}"
+  --dataset_id "360"
+  --split_source_json "${SPLIT_SOURCE_JSON}"
+)
+if [[ -n "${EXPERIMENT_NOTE:-}" ]]; then
+  TRAIN_ARGS+=(--experiment_note "${EXPERIMENT_NOTE}")
+fi
+
 echo "[train_360] dataset_dir : ${PROCESSED_DIR}"
 echo "[train_360] num_classes : ${NUM_CLASSES}"
 echo "[train_360] batch_size  : ${BATCH_SIZE}"
 echo "[train_360] gpu         : ${GPU}"
+echo "[train_360] git_branch  : ${GIT_BRANCH}"
 
 python segmentation.py train \
-  --num_classes "${NUM_CLASSES}" \
-  --dataset_dir "${PROCESSED_DIR}" \
-  --batch_size "${BATCH_SIZE}" \
-  --num_workers "${NUM_WORKERS}" \
-  --gpu "${GPU}" \
-  --num_control_pts "${NUM_CONTROL_PTS}" \
-  --experiment_name "${EXPERIMENT_NAME}" \
+  "${TRAIN_ARGS[@]}" \
   2>&1 | tee "${PROCESSED_DIR}/train.log"
 
 echo "[train_360] Done. Logs: results/${EXPERIMENT_NAME}/"

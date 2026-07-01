@@ -2,6 +2,12 @@ import os
 import json
 import argparse
 import random
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
+from utils.datasplit_meta import write_datasplit_meta
 
 
 def find_step_files(directory):
@@ -84,10 +90,26 @@ def main():
     split_data = split_files(step_files, args.dir_topo)
 
     # Output the split data to a JSON file
-    with open(args.output_json, "w") as json_file:
+    output_path = Path(args.output_json)
+    with open(output_path, "w") as json_file:
         json.dump(split_data, json_file, indent=4)
 
+    counts = {key: len(split_data[key]) for key in ("train", "val", "test")}
+    meta_path = write_datasplit_meta(
+        output_path,
+        dataset_id="mechcad",
+        split_source_json=None,
+        counts=counts,
+        extra={
+            "dir_triangles": str(Path(args.dir_triangles).resolve()),
+            "dir_topo": str(Path(args.dir_topo).resolve()),
+            "train_ratio": 0.7,
+            "val_ratio": 0.15,
+        },
+    )
+
     print(f"Split data has been written to {args.output_json}")
+    print(f"Wrote {meta_path}")
 
 
 if __name__ == "__main__":

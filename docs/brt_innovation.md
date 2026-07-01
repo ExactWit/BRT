@@ -173,7 +173,7 @@ results/<dataset>/<date>/<tag>/
 | `BRANCH_WORKFLOW` | `df34aeb` | scheme 分支工作流约定 |
 | `RESULTS_LAYOUT_V2` | `10cc0c7` | results 路径 `dataset/date/tag` + `--run_tag` |
 | `VIZ_METRICS_IN_FILENAME` | `c919f61` | viz 输出文件名含 `iou` / `acc`（已 supersede） |
-| `VIZ_COMPARE_V1` | `VIZ_COMPARE_V1` | GT+Pred 单文件并排；新文件名格式；STEP 面色 |
+| `VIZ_COMPARE_V1` | `b680039` | GT+Pred 单文件并排；新文件名格式；STEP 面色 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -251,7 +251,7 @@ results/<dataset>/<date>/<tag>/
 
 **交互时会打印标签颜色对照表**（终端色块 + 中英文类名）。Fusion360 8 类配色与 `brepnet-viz` 一致，易于区分。
 
-**单文件 GT+Pred 并排**（自 infra 锚点 `VIZ_COMPARE_V1` 起）：
+**单文件 GT+Pred 并排**（自 infra 锚点 `b680039` 起）：
 
 - 布局：**左侧 Ground Truth | 右侧 Prediction**
 - **PLY**：三角面色（MeshLab 等）

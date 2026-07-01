@@ -107,3 +107,62 @@ $$\mathcal{L}_{\mathrm{bdry}} = \sum_f \Big\| \psi(h_f) - \sum_{e \in \partial f
 - 主任务：Fusion360 面分割（与 BRepNet 同 split）
 - 消融：baseline → +A → +A+D → +A+D+E → +C
 - 指标：mIoU、per-class IoU、参数量
+
+---
+
+## 交互式实验脚本 `scripts/branch.sh`
+
+在 **main** 分支提供的统一入口，自动切换 git 分支、选择数据集并执行 train / test / viz。
+
+```bash
+cd ~/workspace/repo/BRT
+bash scripts/branch.sh
+```
+
+流程：
+
+1. 列出本地 git 分支并 `checkout` 到所选分支
+2. 选择数据集：`360` | `mechcad`
+3. 选择操作：`train` | `test` | `viz`
+
+### 实验元数据
+
+通过 `branch.sh` 发起的 **train** 会在 run 目录写入：
+
+`results/<experiment_name>/<log_name>/<log_version>/experiment_metadata.json`
+
+```json
+{
+  "git_branch": "scheme-a-boundary-mp",
+  "dataset": "360",
+  "dataset_dir": "...",
+  "experiment_name": "...",
+  ...
+}
+```
+
+**test** 结束后在同目录写入 `test_metadata.json`（含 metrics）。
+
+`test` / `viz` 会按当前 **branch + dataset** 过滤 `results/` 下的实验供选择。
+
+### 数据集默认路径
+
+| dataset | processed | STEP 根目录 | num_classes |
+|---------|-----------|-------------|-------------|
+| `360` | `/data/hdd/datasets/s2.0.0/processed/brt` | `.../breps/step` | 8 |
+| `mechcad` | `/data/hdd/datasets/mechcad/processed` | `.../mechcad` | 25 |
+
+### viz 输出
+
+`viz` 从 test 划分选样本，调用 `scripts/viz_segmentation.py`：
+
+- **ply**：`{stem}_pred.ply`、`{stem}_gt.ply`（面片着色网格）
+- **stp**：`{stem}_pred.stp`、`{stem}_gt.stp`（XCAF 面色 STEP）
+
+默认输出到 `<run_dir>/viz/<stem>/`，可用环境变量 `VIZ_OUTPUT_DIR` 覆盖。
+
+### 环境变量（可选）
+
+```bash
+BATCH_SIZE=8 GPU=0 MAX_EPOCHS=100 EXPERIMENT_NAME=my_exp bash scripts/branch.sh
+```

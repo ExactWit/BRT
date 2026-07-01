@@ -1,5 +1,6 @@
 #segmentation.py
 import argparse
+import json
 import pathlib
 import time
 from pytorch_lightning import Trainer
@@ -78,6 +79,18 @@ parser.add_argument(
     default=1000,
     help="Maximum training epochs",
 )
+parser.add_argument(
+    "--git_branch",
+    type=str,
+    default=None,
+    help="Git branch name recorded in experiment metadata",
+)
+parser.add_argument(
+    "--dataset_id",
+    type=str,
+    default=None,
+    help="Dataset id recorded in experiment metadata (e.g. 360, mechcad)",
+)
 
 args = parser.parse_args()
 
@@ -96,6 +109,35 @@ hour_min_second = time.strftime("%H%M%S")
 log_name = args.log_name or month_day
 log_version = args.log_version or hour_min_second
 run_dir = results_path.joinpath(log_name, log_version)
+
+
+def write_json(path: pathlib.Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2, ensure_ascii=False)
+
+
+def write_experiment_metadata() -> None:
+    if args.traintest != "train":
+        return
+    if args.git_branch is None and args.dataset_id is None:
+        return
+    write_json(
+        run_dir / "experiment_metadata.json",
+        {
+            "git_branch": args.git_branch,
+            "dataset": args.dataset_id,
+            "dataset_dir": args.dataset_dir,
+            "experiment_name": experiment_name,
+            "log_name": log_name,
+            "log_version": log_version,
+            "num_classes": args.num_classes,
+            "num_control_pts": args.num_control_pts,
+            "batch_size": args.batch_size,
+            "max_epochs": args.max_epochs,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        },
+    )
 
 checkpoint_callback = ModelCheckpoint(
     monitor="val_iou",
@@ -151,6 +193,8 @@ results/{experiment_name}/{log_name}/{log_version}/best.ckpt
     else:
         model = SegmentationModel(**model_hparams)
         ckpt_path = None
+    run_dir.mkdir(parents=True, exist_ok=True)
+    write_experiment_metadata()
     train_data = Dataset(root_dir=args.dataset_dir, split="train",masking_rate=None,load_label_from_file=True)
     val_data = Dataset(root_dir=args.dataset_dir, split="val",masking_rate=None,load_label_from_file=True)
     train_loader = train_data.get_dataloader(
@@ -172,6 +216,20 @@ else:
     model = SegmentationModel.load_from_checkpoint(args.checkpoint)
     results = trainer.test(model=model, dataloaders=[
                            test_loader], verbose=True)
+    metrics = results[0] if results else {}
+    ckpt_path = pathlib.Path(args.checkpoint)
+    run_dir_for_test = ckpt_path.parent
+    write_json(
+        run_dir_for_test / "test_metadata.json",
+        {
+            "checkpoint": str(ckpt_path.resolve()),
+            "dataset_dir": args.dataset_dir,
+            "git_branch": args.git_branch,
+            "dataset": args.dataset_id,
+            "tested_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "metrics": metrics,
+        },
+    )
     print(
-        f"Classfication Loss on test set: {results[0]['test_loss']}"
+        f"Classfication Loss on test set: {metrics.get('test_loss')}"
     )

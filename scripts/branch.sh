@@ -149,6 +149,76 @@ print(meta.get("num_classes", ""))
 PY
 }
 
+describe_run_dir() {
+  local run_dir="$1"
+  local branch="$2"
+  local dataset="$3"
+  python3 - "${run_dir}" "${RESULTS_DIR}" "${branch}" "${dataset}" "${DATASET_DIR}" "${NUM_CLASSES}" <<'PY'
+import json, pathlib, sys
+run_dir, results_dir, branch, dataset, default_ds, default_nc = sys.argv[1:7]
+run_dir = pathlib.Path(run_dir)
+results_dir = pathlib.Path(results_dir)
+try:
+    rel = str(run_dir.relative_to(results_dir))
+except ValueError:
+    rel = str(run_dir)
+
+exp_path = run_dir / "experiment_metadata.json"
+test_path = run_dir / "test_metadata.json"
+tags = []
+ds_dir = default_ds
+num_classes = default_nc
+
+if exp_path.exists():
+    exp = json.load(open(exp_path, encoding="utf-8"))
+    ds_dir = exp.get("dataset_dir") or ds_dir
+    if exp.get("num_classes") is not None:
+        num_classes = str(exp.get("num_classes"))
+    if exp.get("git_branch") == branch and exp.get("dataset") == dataset:
+        tags.append("match")
+    else:
+        tags.append(
+            f"meta: branch={exp.get('git_branch', '?')}, dataset={exp.get('dataset', '?')}"
+        )
+elif test_path.exists():
+    test = json.load(open(test_path, encoding="utf-8"))
+    ds_dir = test.get("dataset_dir") or ds_dir
+    if test.get("git_branch") == branch and test.get("dataset") == dataset:
+        tags.append("match")
+    else:
+        tags.append(
+            f"meta: branch={test.get('git_branch', '?')}, dataset={test.get('dataset', '?')}"
+        )
+else:
+    tags.append("no metadata")
+
+if test_path.exists():
+    test = json.load(open(test_path, encoding="utf-8"))
+    iou = (test.get("metrics") or {}).get("test_iou")
+    if iou is not None:
+        tags.append(f"iou={iou}")
+    tags.append("tested")
+
+label = rel
+if tags:
+    label += " [" + ", ".join(tags) + "]"
+
+ckpt = ""
+for name in ("last.ckpt", "best.ckpt"):
+    candidate = run_dir / name
+    if candidate.exists():
+        ckpt = str(candidate)
+        break
+if not ckpt:
+    sys.exit(1)
+print(label)
+print(str(run_dir))
+print(ckpt)
+print(ds_dir)
+print(num_classes)
+PY
+}
+
 find_matching_runs() {
   local branch="$1"
   local dataset="$2"
@@ -174,15 +244,12 @@ find_matching_runs() {
     RUN_NUM_CLASSES+=("${nclass}")
   }
 
+  # 1) Runs with experiment_metadata matching branch + dataset (listed first)
   while IFS= read -r meta_file; do
     mapfile -t parsed < <(metadata_matches "${meta_file}" "${branch}" "${dataset}" || true)
     [[ ${#parsed[@]} -eq 5 ]] || continue
-    local run_dir ckpt label_suffix=""
+    local run_dir ckpt
     run_dir="$(dirname "${meta_file}")"
-    if [[ -f "${run_dir}/test_metadata.json" ]]; then
-      label_suffix=" [tested]"
-    fi
-    ckpt=""
     if [[ -f "${run_dir}/last.ckpt" ]]; then
       ckpt="${run_dir}/last.ckpt"
     elif [[ -f "${run_dir}/best.ckpt" ]]; then
@@ -190,60 +257,26 @@ find_matching_runs() {
     else
       continue
     fi
-    add_run "${run_dir}" "${ckpt}" "${parsed[0]}/${parsed[1]}/${parsed[2]}${label_suffix}" "${parsed[3]}" "${parsed[4]}"
+    mapfile -t info < <(describe_run_dir "${run_dir}" "${branch}" "${dataset}")
+    [[ ${#info[@]} -eq 5 ]] || continue
+    add_run "${info[1]}" "${info[2]}" "${info[0]}" "${info[3]}" "${info[4]}"
   done < <(find "${RESULTS_DIR}" -name experiment_metadata.json 2>/dev/null | sort)
 
-  while IFS= read -r test_meta; do
-    mapfile -t parsed < <(python3 - "${test_meta}" "${branch}" "${dataset}" "${RESULTS_DIR}" <<'PY'
-import json, pathlib, sys
-path, branch, dataset, results_dir = sys.argv[1:5]
-with open(path, encoding="utf-8") as f:
-    meta = json.load(f)
-if meta.get("git_branch") != branch or meta.get("dataset") != dataset:
-    sys.exit(1)
-run_dir = pathlib.Path(path).parent
-try:
-    label = str(run_dir.relative_to(results_dir))
-except ValueError:
-    label = str(run_dir)
-ckpt = meta.get("checkpoint", "")
-if not ckpt:
-    for name in ("last.ckpt", "best.ckpt"):
-        candidate = run_dir / name
-        if candidate.exists():
-            ckpt = str(candidate)
-            break
-if not ckpt:
-    sys.exit(1)
-exp_meta = run_dir / "experiment_metadata.json"
-num_classes = ""
-if exp_meta.exists():
-    num_classes = str(json.load(open(exp_meta, encoding="utf-8")).get("num_classes", ""))
-metrics = meta.get("metrics", {})
-iou = metrics.get("test_iou", "n/a")
-print(f"{label} iou={iou}")
-print(str(run_dir))
-print(ckpt)
-print(meta.get("dataset_dir", ""))
-print(num_classes)
-PY
-)
-    [[ ${#parsed[@]} -ge 3 ]] || continue
-    local nclass="${parsed[4]:-${NUM_CLASSES}}"
-    [[ -z "${nclass}" ]] && nclass="${NUM_CLASSES}"
-    add_run "${parsed[1]}" "${parsed[2]}" "${parsed[0]} [test]" "${parsed[3]:-${DATASET_DIR}}" "${nclass}"
-  done < <(find "${RESULTS_DIR}" -name test_metadata.json 2>/dev/null | sort)
+  # 2) Always list every checkpoint run (includes legacy runs without metadata, e.g. 0628)
+  while IFS= read -r ckpt; do
+    [[ "${ckpt}" == *".backup_"* ]] && continue
+    local run_dir
+    run_dir="$(dirname "${ckpt}")"
+    [[ -n "${seen_dirs[$run_dir]:-}" ]] && continue
+    mapfile -t info < <(describe_run_dir "${run_dir}" "${branch}" "${dataset}")
+    [[ ${#info[@]} -eq 5 ]] || continue
+    add_run "${info[1]}" "${info[2]}" "${info[0]}" "${info[3]}" "${info[4]}"
+  done < <(find "${RESULTS_DIR}" -name 'last.ckpt' 2>/dev/null | sort)
 
   if [[ ${#RUN_LABELS[@]} -eq 0 ]]; then
-    echo "[branch.sh] 未找到匹配 git_branch=${branch}, dataset=${dataset} 的实验。" >&2
-    echo "  将列出所有含 checkpoint 的 run（可能缺少 metadata）。" >&2
-    while IFS= read -r ckpt; do
-      [[ "${ckpt}" == *".backup_"* ]] && continue
-      local run_dir label
-      run_dir="$(dirname "${ckpt}")"
-      label="${run_dir#${RESULTS_DIR}/}"
-      add_run "${run_dir}" "${ckpt}" "${label} (no metadata)" "${DATASET_DIR}" "${NUM_CLASSES}"
-    done < <(find "${RESULTS_DIR}" -name 'last.ckpt' 2>/dev/null | sort)
+    echo "[branch.sh] 未找到任何 checkpoint。" >&2
+  else
+    echo "[branch.sh] 共 ${#RUN_LABELS[@]} 个 run（含无 metadata 的历史实验）。" >&2
   fi
 }
 

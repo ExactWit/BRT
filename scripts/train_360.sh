@@ -45,7 +45,14 @@ fi
 cd "${REPO_DIR}"
 mkdir -p logs
 
+# shellcheck source=scripts/run_layout.sh
+source "${REPO_DIR}/scripts/run_layout.sh"
+RESULTS_DIR="${REPO_DIR}/results"
+RESULTS_DATASET_NAME="${EXPERIMENT_NAME}"
+
 GIT_BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+LOG_NAME="${LOG_NAME:-$(date +%m%d)}"
+RUN_TAG="$(resolve_run_tag "${GIT_BRANCH}")"
 TRAIN_ARGS=(
   --num_classes "${NUM_CLASSES}"
   --dataset_dir "${PROCESSED_DIR}"
@@ -54,10 +61,15 @@ TRAIN_ARGS=(
   --gpu "${GPU}"
   --num_control_pts "${NUM_CONTROL_PTS}"
   --experiment_name "${EXPERIMENT_NAME}"
+  --log_name "${LOG_NAME}"
+  --run_tag "${RUN_TAG}"
   --git_branch "${GIT_BRANCH}"
   --dataset_id "360"
   --split_source_json "${SPLIT_SOURCE_JSON}"
 )
+if [[ -n "${RESUME_FROM:-}" ]]; then
+  TRAIN_ARGS+=(--resume_from "${RESUME_FROM}")
+fi
 if [[ -n "${EXPERIMENT_NOTE:-}" ]]; then
   TRAIN_ARGS+=(--experiment_note "${EXPERIMENT_NOTE}")
 fi
@@ -67,10 +79,11 @@ echo "[train_360] num_classes : ${NUM_CLASSES}"
 echo "[train_360] batch_size  : ${BATCH_SIZE}"
 echo "[train_360] gpu         : ${GPU}"
 echo "[train_360] git_branch  : ${GIT_BRANCH}"
+echo "[train_360] results_path: results/${EXPERIMENT_NAME}/${LOG_NAME}/${RUN_TAG}"
 
 python segmentation.py train \
   "${TRAIN_ARGS[@]}" \
   2>&1 | tee "${PROCESSED_DIR}/train.log"
 
-echo "[train_360] Done. Logs: results/${EXPERIMENT_NAME}/"
-echo "  tensorboard --logdir results/${EXPERIMENT_NAME}"
+echo "[train_360] Done. Logs: results/${EXPERIMENT_NAME}/${LOG_NAME}/${RUN_TAG}"
+echo "  tensorboard --logdir results/${EXPERIMENT_NAME}/${LOG_NAME}/${RUN_TAG}"

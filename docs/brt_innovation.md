@@ -172,7 +172,7 @@ results/<dataset>/<date>/<tag>/
 |------|------|------|
 | `BRANCH_WORKFLOW` | `df34aeb` | scheme 分支工作流约定 |
 | `RESULTS_LAYOUT_V2` | `10cc0c7` | results 路径 `dataset/date/tag` + `--run_tag` |
-| `VIZ_METRICS_IN_FILENAME` | `VIZ_METRICS_IN_FILENAME` | viz 输出文件名含 `iou` / `acc` |
+| `VIZ_METRICS_IN_FILENAME` | `c919f61` | viz 输出文件名含 `iou` / `acc` |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -248,7 +248,7 @@ results/<dataset>/<date>/<tag>/
 
 输出目录：`<run_dir>/viz/<stem>/`（可用 `VIZ_OUTPUT_DIR` 覆盖 run_dir 部分）。
 
-**文件名**（自 infra 锚点 `VIZ_METRICS_IN_FILENAME` 起）在 pred/gt 中嵌入该样本的 **macro IoU** 与 **accuracy**：
+**文件名**（自 infra 锚点 `c919f61` 起）在 pred/gt 中嵌入该样本的 **macro IoU** 与 **accuracy**：
 
 ```text
 {stem}_pred_iou0.8532_acc0.9201.ply

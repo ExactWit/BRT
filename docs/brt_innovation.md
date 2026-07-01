@@ -177,6 +177,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_METRICS_IN_FILENAME` | `c919f61` | viz 输出文件名含 `iou` / `acc`（已 supersede） |
 | `VIZ_COMPARE_V1` | `b680039` | GT+Pred 单文件并排；新文件名格式 |
 | `VIZ_STEP_COLOR_FIX` | `a74e983` | STEP 正确写入 XCAF 面色（SetColorMode + AddShape 后设色） |
+| `VIZ_LOOP` | `32ac3b0` | branch.sh viz 循环导出，quit 退出 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -249,6 +250,8 @@ results/<dataset>/<date>/<tag>/
 ### viz 输出
 
 `viz` 从 test 划分选样本，调用 `scripts/viz_segmentation.py`（参考 BRepNet `brepnet-viz` 的并排对比逻辑）。
+
+**viz session（自 infra 锚点 `32ac3b0` 起）**：选定 run 与导出格式后进入循环，可连续导出多个样本；每次完成后输入 `quit` 退出，回车则继续选下一个样本（无需重新进 `branch.sh`）。
 
 输出目录：`<run_dir>/viz/`（可用 `VIZ_OUTPUT_DIR` 覆盖）。
 

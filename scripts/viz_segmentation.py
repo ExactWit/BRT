@@ -10,6 +10,7 @@ import sys
 
 import numpy as np
 import torch
+import torchmetrics.functional as tmf
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT))
@@ -58,6 +59,33 @@ PALETTE = np.array(
 
 def class_color(class_id: int) -> np.ndarray:
     return PALETTE[class_id % len(PALETTE)]
+
+
+def compute_sample_metrics(
+    pred: np.ndarray, gt: np.ndarray, num_classes: int
+) -> tuple[float, float]:
+    n = min(len(pred), len(gt))
+    if n == 0:
+        return 0.0, 0.0
+    pred_t = torch.from_numpy(pred[:n].astype(np.int64))
+    gt_t = torch.from_numpy(gt[:n].astype(np.int64))
+    acc = float(
+        tmf.accuracy(pred_t, gt_t, task="multiclass", num_classes=num_classes)
+    )
+    iou = float(
+        tmf.jaccard_index(
+            pred_t,
+            gt_t,
+            task="multiclass",
+            num_classes=num_classes,
+            average="macro",
+        )
+    )
+    return iou, acc
+
+
+def metric_filename_suffix(iou: float, acc: float) -> str:
+    return f"iou{iou:.4f}_acc{acc:.4f}"
 
 
 def find_step_file(stem: str, dataset_id: str, step_root: pathlib.Path | None) -> pathlib.Path | None:
@@ -299,6 +327,9 @@ def main() -> None:
         if pathlib.Path(entry["face"]).stem == stem
     )
     gt = load_labels(pathlib.Path(item["label"]), num_faces=len(pred))
+    num_classes = int(model.hparams.num_classes)
+    sample_iou, sample_acc = compute_sample_metrics(pred, gt, num_classes)
+    metric_tag = metric_filename_suffix(sample_iou, sample_acc)
 
     step_root = pathlib.Path(args.step_root) if args.step_root else None
     step_path = find_step_file(stem, args.dataset_id, step_root)
@@ -311,10 +342,17 @@ def main() -> None:
     if args.format == "ply":
         for name, labels in (("pred", pred), ("gt", gt)):
             verts, colors, faces = build_colored_mesh(step_path, labels)
-            write_ply(out_dir / f"{stem}_{name}.ply", verts, colors, faces)
+            write_ply(
+                out_dir / f"{stem}_{name}_{metric_tag}.ply",
+                verts,
+                colors,
+                faces,
+            )
     else:
-        write_colored_step(step_path, pred, out_dir / f"{stem}_pred.stp")
-        write_colored_step(step_path, gt, out_dir / f"{stem}_gt.stp")
+        write_colored_step(
+            step_path, pred, out_dir / f"{stem}_pred_{metric_tag}.stp"
+        )
+        write_colored_step(step_path, gt, out_dir / f"{stem}_gt_{metric_tag}.stp")
 
     summary = {
         "stem": stem,
@@ -322,8 +360,15 @@ def main() -> None:
         "checkpoint": str(pathlib.Path(args.checkpoint).resolve()),
         "output_dir": str(out_dir.resolve()),
         "format": args.format,
+        "sample_iou": sample_iou,
+        "sample_acc": sample_acc,
+        "metric_tag": metric_tag,
         "pred_labels": pred.tolist(),
         "gt_labels": gt.tolist(),
+        "outputs": {
+            "pred": f"{stem}_pred_{metric_tag}.{args.format}",
+            "gt": f"{stem}_gt_{metric_tag}.{args.format}",
+        },
     }
     with open(out_dir / "viz_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)

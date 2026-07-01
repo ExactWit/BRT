@@ -172,6 +172,7 @@ results/<dataset>/<date>/<tag>/
 |------|------|------|
 | `BRANCH_WORKFLOW` | `df34aeb` | scheme 分支工作流约定 |
 | `RESULTS_LAYOUT_V2` | `10cc0c7` | results 路径 `dataset/date/tag` + `--run_tag` |
+| `VIZ_METRICS_IN_FILENAME` | `VIZ_METRICS_IN_FILENAME` | viz 输出文件名含 `iou` / `acc` |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -243,12 +244,20 @@ results/<dataset>/<date>/<tag>/
 
 ### viz 输出
 
-`viz` 从 test 划分选样本，调用 `scripts/viz_segmentation.py`：
+`viz` 从 test 划分选样本，调用 `scripts/viz_segmentation.py`。
 
-- **ply**：`{stem}_pred.ply`、`{stem}_gt.ply`（面片着色网格）
-- **stp**：`{stem}_pred.stp`、`{stem}_gt.stp`（XCAF 面色 STEP）
+输出目录：`<run_dir>/viz/<stem>/`（可用 `VIZ_OUTPUT_DIR` 覆盖 run_dir 部分）。
 
-默认输出到 `<run_dir>/viz/<stem>/`，可用环境变量 `VIZ_OUTPUT_DIR` 覆盖。
+**文件名**（自 infra 锚点 `VIZ_METRICS_IN_FILENAME` 起）在 pred/gt 中嵌入该样本的 **macro IoU** 与 **accuracy**：
+
+```text
+{stem}_pred_iou0.8532_acc0.9201.ply
+{stem}_gt_iou0.8532_acc0.9201.ply
+```
+
+STEP 格式同理：`{stem}_pred_iou0.8532_acc0.9201.stp`。指标与训练时 `torchmetrics` 的 multiclass macro IoU / accuracy 一致（逐面分类，单样本统计）。
+
+同目录写入 `viz_summary.json`，含 `sample_iou`、`sample_acc`、`metric_tag`、`outputs` 等字段。
 
 ### 环境变量（可选）
 

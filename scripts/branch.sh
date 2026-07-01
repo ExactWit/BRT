@@ -15,24 +15,38 @@ fi
 export PYTHONNOUSERSITE=1
 cd "${REPO_DIR}"
 
+# Write selection into the variable named by the first argument.
+# Must NOT use command substitution $(pick_from_list ...): that breaks read().
 pick_from_list() {
-  local prompt="$1"
-  shift
+  local __outvar="$1"
+  local prompt="$2"
+  shift 2
   local options=("$@")
-  local i choice
+  local i choice selected
 
-  echo ""
-  echo "${prompt}"
+  if [[ ${#options[@]} -eq 0 ]]; then
+    echo "[branch.sh] ERROR: 没有可选项。" >&2
+    exit 1
+  fi
+
+  echo "" >&2
+  echo "${prompt}" >&2
   for i in "${!options[@]}"; do
-    printf "  [%d] %s\n" "$((i + 1))" "${options[$i]}"
+    printf "  [%d] %s\n" "$((i + 1))" "${options[$i]}" >&2
   done
+
   while true; do
-    read -r -p "请输入编号: " choice
+    if [[ -r /dev/tty ]]; then
+      read -r -p "请输入编号: " choice </dev/tty
+    else
+      read -r -p "请输入编号: " choice
+    fi
     if [[ "${choice}" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#options[@]} )); then
-      echo "${options[$((choice - 1))]}"
+      selected="${options[$((choice - 1))]}"
+      printf -v "${__outvar}" '%s' "${selected}"
       return 0
     fi
-    echo "无效编号，请重试。"
+    echo "无效编号，请重试。" >&2
   done
 }
 
@@ -41,7 +55,20 @@ sanitize_name() {
 }
 
 list_git_branches() {
-  git for-each-ref --format='%(refname:short)' refs/heads/ | sort
+  local current
+  current="$(git rev-parse --abbrev-ref HEAD)"
+  while IFS= read -r branch; do
+    [[ -z "${branch}" ]] && continue
+    if [[ "${branch}" == "${current}" ]]; then
+      printf '%s (current)\n' "${branch}"
+    else
+      printf '%s\n' "${branch}"
+    fi
+  done < <(git for-each-ref --format='%(refname:short)' refs/heads/ | sort)
+}
+
+branch_name_from_label() {
+  echo "$1" | sed 's/ (current)$//'
 }
 
 checkout_branch() {
@@ -84,7 +111,11 @@ configure_dataset() {
 ensure_dataset_ready() {
   if [[ ! -f "${DATASET_DIR}/datasplit.json" ]]; then
     echo "[branch.sh] 未找到 ${DATASET_DIR}/datasplit.json"
-    read -r -p "是否现在运行预处理脚本 ${PREPROCESS_SCRIPT}? [y/N] " ans
+    if [[ -r /dev/tty ]]; then
+      read -r -p "是否现在运行预处理脚本 ${PREPROCESS_SCRIPT}? [y/N] " ans </dev/tty
+    else
+      read -r -p "是否现在运行预处理脚本 ${PREPROCESS_SCRIPT}? [y/N] " ans
+    fi
     if [[ "${ans}" =~ ^[Yy]$ ]]; then
       bash "${PREPROCESS_SCRIPT}"
     else
@@ -204,8 +235,8 @@ PY
   done < <(find "${RESULTS_DIR}" -name test_metadata.json 2>/dev/null | sort)
 
   if [[ ${#RUN_LABELS[@]} -eq 0 ]]; then
-    echo "[branch.sh] 未找到匹配 git_branch=${branch}, dataset=${dataset} 的实验。"
-    echo "  将列出所有含 checkpoint 的 run（可能缺少 metadata）。"
+    echo "[branch.sh] 未找到匹配 git_branch=${branch}, dataset=${dataset} 的实验。" >&2
+    echo "  将列出所有含 checkpoint 的 run（可能缺少 metadata）。" >&2
     while IFS= read -r ckpt; do
       [[ "${ckpt}" == *".backup_"* ]] && continue
       local run_dir label
@@ -219,13 +250,13 @@ PY
 pick_run() {
   local branch="$1"
   local dataset="$2"
+  local picked
   find_matching_runs "${branch}" "${dataset}"
   if [[ ${#RUN_LABELS[@]} -eq 0 ]]; then
     echo "[branch.sh] ERROR: results/ 下没有可用 checkpoint。"
     exit 1
   fi
-  local picked
-  picked="$(pick_from_list "选择实验 run:" "${RUN_LABELS[@]}")"
+  pick_from_list picked "选择实验 run:" "${RUN_LABELS[@]}"
   local i
   for i in "${!RUN_LABELS[@]}"; do
     if [[ "${RUN_LABELS[$i]}" == "${picked}" ]]; then
@@ -240,6 +271,8 @@ pick_run() {
       return 0
     fi
   done
+  echo "[branch.sh] ERROR: 未匹配到所选 run。" >&2
+  exit 1
 }
 
 list_test_samples() {
@@ -259,13 +292,8 @@ pick_test_sample() {
     echo "[branch.sh] ERROR: test 划分为空。"
     exit 1
   fi
-  local labels=()
-  local line
-  for line in "${SAMPLE_LINES[@]}"; do
-    labels+=("${line}")
-  done
   local picked
-  picked="$(pick_from_list "选择 test 样本 (index<TAB>stem):" "${labels[@]}")"
+  pick_from_list picked "选择 test 样本 (index<TAB>stem):" "${SAMPLE_LINES[@]}"
   SAMPLE_INDEX="${picked%%$'\t'*}"
   SAMPLE_STEM="${picked##*$'\t'}"
 }
@@ -331,12 +359,11 @@ run_test() {
 
 run_viz() {
   local branch="$1"
+  local format
   pick_run "${branch}" "${DATASET_ID}"
   ensure_dataset_ready
   pick_test_sample
-
-  local format gpu out_dir
-  format="$(pick_from_list "选择导出格式:" "ply" "stp")"
+  pick_from_list format "选择导出格式:" "ply" "stp"
   gpu="${GPU:-0}"
   out_dir="${VIZ_OUTPUT_DIR:-${SELECTED_RUN_DIR}/viz}"
 
@@ -359,20 +386,27 @@ run_viz() {
 }
 
 main() {
-  mapfile -t BRANCHES < <(list_git_branches)
-  if [[ ${#BRANCHES[@]} -eq 0 ]]; then
-    echo "[branch.sh] ERROR: 没有本地分支。"
+  if [[ ! -t 1 ]] && [[ ! -r /dev/tty ]]; then
+    echo "[branch.sh] ERROR: 需要交互式终端。请运行: bash scripts/branch.sh" >&2
     exit 1
   fi
 
-  local branch dataset mode
-  branch="$(pick_from_list "选择 git 分支:" "${BRANCHES[@]}")"
+  mapfile -t BRANCHES < <(list_git_branches)
+  if [[ ${#BRANCHES[@]} -eq 0 ]]; then
+    echo "[branch.sh] ERROR: 没有本地分支。" >&2
+    exit 1
+  fi
+
+  local branch_label branch dataset mode
+  echo "[branch.sh] 仓库: ${REPO_DIR}" >&2
+  pick_from_list branch_label "选择 git 分支:" "${BRANCHES[@]}"
+  branch="$(branch_name_from_label "${branch_label}")"
   checkout_branch "${branch}"
 
-  dataset="$(pick_from_list "选择数据集:" "360" "mechcad")"
+  pick_from_list dataset "选择数据集:" "360" "mechcad"
   configure_dataset "${dataset}"
 
-  mode="$(pick_from_list "选择操作:" "train" "test" "viz")"
+  pick_from_list mode "选择操作:" "train" "test" "viz"
   case "${mode}" in
     train) run_train "${branch}" ;;
     test) run_test "${branch}" ;;

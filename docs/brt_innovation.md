@@ -239,7 +239,7 @@ results/<dataset>/<date>/<tag>/
 
 `test` / `viz` 会按当前 **branch + dataset** 过滤 `results/` 下的实验供选择；列表中会显示备注摘要（`note=...`）。
 
-**viz 样本列表（自 infra 锚点 `TEST_PER_SAMPLE` 起）**：进入 viz 前若 run 目录无有效 `test_per_sample.json`，会自动跑一次 test；样本菜单按 **per-sample iou 升序**（最差优先）排列。
+**viz 样本列表（自 infra 锚点 `8fcd876` 起）**：进入 viz 前若 run 目录无有效 `test_per_sample.json`，会自动跑一次 test；样本菜单按 **per-sample iou 升序**（最差优先）排列。
 
 ### 数据集默认路径
 

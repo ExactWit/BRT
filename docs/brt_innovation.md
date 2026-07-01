@@ -176,7 +176,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_COMPARE_V1` | `b680039` | GT+Pred 单文件并排；新文件名格式 |
 | `VIZ_STEP_COLOR_FIX` | `a74e983` | STEP 正确写入 XCAF 面色（SetColorMode + AddShape 后设色） |
 | `VIZ_LOOP` | `32ac3b0` | branch.sh viz 循环导出，quit 退出 |
-| `TEST_PER_SAMPLE` | `TEST_PER_SAMPLE` | test 写 per-sample iou/acc；viz 按 iou 升序列表 |
+| `TEST_PER_SAMPLE` | `8fcd876` | test 写 per-sample iou/acc；viz 按 iou 升序列表 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。

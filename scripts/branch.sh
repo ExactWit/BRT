@@ -346,27 +346,91 @@ pick_run() {
   exit 1
 }
 
-list_test_samples() {
-  python3 - "${DATASET_DIR}" <<'PY'
+invoke_segmentation_test() {
+  local branch="$1"
+  local batch_size num_workers gpu
+  batch_size="${BATCH_SIZE:-16}"
+  num_workers="${NUM_WORKERS:-4}"
+  gpu="${GPU:-0}"
+
+  local test_args=(
+    --num_classes "${NUM_CLASSES}"
+    --dataset_dir "${DATASET_DIR}"
+    --batch_size "${batch_size}"
+    --num_workers "${num_workers}"
+    --gpu "${gpu}"
+    --num_control_pts "${NUM_CONTROL_PTS}"
+    --checkpoint "${SELECTED_CHECKPOINT}"
+    --git_branch "${branch}"
+    --dataset_id "${DATASET_ID}"
+  )
+  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
+    test_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
+  fi
+
+  python segmentation.py test "${test_args[@]}"
+}
+
+ensure_test_per_sample() {
+  local branch="$1"
+  local per_sample="${SELECTED_RUN_DIR}/test_per_sample.json"
+  if python3 - "${per_sample}" "${SELECTED_CHECKPOINT}" "${DATASET_DIR}" <<'PY'
 import json, pathlib, sys
-root = pathlib.Path(sys.argv[1])
-split = json.load(open(root / "datasplit.json", encoding="utf-8"))["test"]
-for i, item in enumerate(split):
-    stem = pathlib.Path(item["face"]).stem
-    print(f"{i}\t{stem}")
+per_sample_path, checkpoint, dataset_dir = map(pathlib.Path, sys.argv[1:4])
+if not per_sample_path.exists():
+    sys.exit(1)
+try:
+    payload = json.load(open(per_sample_path, encoding="utf-8"))
+except Exception:
+    sys.exit(1)
+if payload.get("checkpoint") != str(checkpoint.resolve()):
+    sys.exit(1)
+if payload.get("dataset_dir") != str(dataset_dir.resolve()):
+    sys.exit(1)
+if not payload.get("samples"):
+    sys.exit(1)
+sys.exit(0)
+PY
+  then
+    return 0
+  fi
+
+  echo "[branch.sh] 未找到有效的 per-sample test 结果 (${per_sample})" >&2
+  echo "[branch.sh] 自动运行 test 以记录每个 test 样本的 iou/acc..." >&2
+  invoke_segmentation_test "${branch}"
+}
+
+list_test_samples() {
+  local run_dir="$1"
+  python3 - "${DATASET_DIR}" "${run_dir}" "${REPO_DIR}" <<'PY'
+import pathlib, sys
+sys.path.insert(0, sys.argv[3])
+from utils.test_per_sample import list_test_samples_sorted
+
+dataset_dir = pathlib.Path(sys.argv[1])
+run_dir = pathlib.Path(sys.argv[2])
+for row in list_test_samples_sorted(dataset_dir, run_dir):
+    idx = row["index"]
+    stem = row["stem"]
+    if row.get("iou") is not None and row.get("acc") is not None:
+        print(
+            f"{idx}\t{stem}\tiou={row['iou'] * 100:.1f}\tacc={row['acc'] * 100:.1f}"
+        )
+    else:
+        print(f"{idx}\t{stem}\t(no metrics)")
 PY
 }
 
 pick_test_sample() {
-  mapfile -t SAMPLE_LINES < <(list_test_samples)
+  mapfile -t SAMPLE_LINES < <(list_test_samples "${SELECTED_RUN_DIR}")
   if [[ ${#SAMPLE_LINES[@]} -eq 0 ]]; then
     echo "[branch.sh] ERROR: test 划分为空。"
     exit 1
   fi
   local picked
-  pick_from_list picked "选择 test 样本 (index<TAB>stem):" "${SAMPLE_LINES[@]}"
+  pick_from_list picked "选择 test 样本 (按 iou 升序, index<TAB>stem<TAB>metrics):" "${SAMPLE_LINES[@]}"
   SAMPLE_INDEX="${picked%%$'\t'*}"
-  SAMPLE_STEM="${picked##*$'\t'}"
+  SAMPLE_STEM="$(echo "${picked}" | awk -F '\t' '{print $2}')"
 }
 
 run_train() {
@@ -441,32 +505,12 @@ run_test() {
   local branch="$1"
   pick_run "${branch}" "${DATASET_ID}"
   ensure_dataset_ready
-  local batch_size num_workers gpu
-  batch_size="${BATCH_SIZE:-16}"
-  num_workers="${NUM_WORKERS:-4}"
-  gpu="${GPU:-0}"
 
   echo "[branch.sh] test"
   echo "  checkpoint  : ${SELECTED_CHECKPOINT}"
   echo "  dataset_dir : ${DATASET_DIR}"
 
-  local test_args=(
-    --num_classes "${NUM_CLASSES}"
-    --dataset_dir "${DATASET_DIR}"
-    --batch_size "${batch_size}"
-    --num_workers "${num_workers}"
-    --gpu "${gpu}"
-    --num_control_pts "${NUM_CONTROL_PTS}"
-    --checkpoint "${SELECTED_CHECKPOINT}"
-    --git_branch "${branch}"
-    --dataset_id "${DATASET_ID}"
-  )
-  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
-    test_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
-  fi
-
-  python segmentation.py test \
-    "${test_args[@]}"
+  invoke_segmentation_test "${branch}"
 }
 
 run_viz() {
@@ -474,6 +518,7 @@ run_viz() {
   local format viz_action
   pick_run "${branch}" "${DATASET_ID}"
   ensure_dataset_ready
+  ensure_test_per_sample "${branch}"
   pick_from_list format "选择导出格式 (本 session 内固定):" "ply" "stp"
   gpu="${GPU:-0}"
   out_dir="${VIZ_OUTPUT_DIR:-${SELECTED_RUN_DIR}/viz}"
@@ -488,6 +533,7 @@ run_viz() {
     echo "  说明       : PLY 左 GT / 右 Pred 并排对比"
   fi
   echo "  退出       : 每次导出完成后输入 quit（或 q）退出 viz；回车继续选下一个样本"
+  echo "  样本列表   : 按 test per-sample iou 升序（最差优先）"
   echo ""
 
   while true; do

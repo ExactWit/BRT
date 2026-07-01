@@ -13,6 +13,27 @@ face 序列          → Transformer                                     → 逐
 
 主要缺口：拓扑层未显式使用边界算子 $\partial_2,\partial_1$；FaceEncoder 展平后 mean pool 丢失三角 Bézier 重心结构。
 
+## 分支工作流（公共 infra vs 方案代码）
+
+| 分支 | 职责 |
+|------|------|
+| `main` | 公共 infra：`scripts/branch.sh`、`segmentation.py`、`utils/`、数据集脚本、`docs/` 等 |
+| `scheme-*` | **仅**方案相关：`models/*_encoder.py`、切换 `models/brt.py` 中的 topo 层、对应 `tests/` |
+
+**约定：**
+
+1. 新方案分支从 **main 最新公共 infra** 分出，不要从旧 scheme 分支再分。
+2. scheme 分支需要公共更新时，在分支上执行 `git merge main`（不要 cherry-pick 多文件）。
+3. 公共 infra 锚点（含 branch.sh、experiment metadata、viz）：`82f4ba0`（`feat: branch control`）。
+
+```bash
+# 新建方案 C
+git checkout main
+git checkout -b scheme-c-coedge-mp
+# 只改 models/ 与 tests/，然后 train
+bash scripts/branch.sh
+```
+
 ## Branch 规划
 
 | Branch | 方案 | 状态 |

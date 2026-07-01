@@ -127,23 +127,59 @@ bash scripts/branch.sh
 
 ### 实验元数据
 
-通过 `branch.sh` 发起的 **train** 会在 run 目录写入：
+每次 **train** 都会在 run 目录写入：
 
 `results/<experiment_name>/<log_name>/<log_version>/experiment_metadata.json`
 
+（通过 `branch.sh`、`train_360.sh` 或直接 `python segmentation.py train` 均可；未传 `--git_branch` 时会自动从当前仓库读取。）
+
+**train** 元数据示例（`schema_version: 1`）：
+
 ```json
 {
-  "git_branch": "scheme-a-boundary-mp",
-  "dataset": "360",
-  "dataset_dir": "...",
-  "experiment_name": "...",
-  ...
+  "schema_version": 1,
+  "run": {
+    "experiment_name": "scheme-a-boundary-mp_360",
+    "log_name": "0701",
+    "log_version": "120000",
+    "run_dir": "/abs/path/to/results/...",
+    "created_at": "2026-07-01T12:00:00"
+  },
+  "git": {
+    "branch": "scheme-a-boundary-mp",
+    "commit": "908a912",
+    "commit_full": "...",
+    "dirty": false,
+    "remote": "..."
+  },
+  "dataset": {
+    "id": "360",
+    "processed_dir": "/data/hdd/datasets/s2.0.0/processed/brt",
+    "num_classes": 8,
+    "num_control_pts": 28
+  },
+  "datasplit": {
+    "datasplit_json": ".../datasplit.json",
+    "sha256": "...",
+    "counts": {"train": 19675, "val": 8426, "test": 4978},
+    "split_source_json": ".../processed/dataset.json",
+    "sidecar": { "...": "来自 datasplit_meta.json" }
+  },
+  "train": {
+    "batch_size": 16,
+    "max_epochs": 1000,
+    "gpu": 0,
+    "resume_from": null
+  },
+  "note": "用户备注（branch.sh train 时会提示输入）"
 }
 ```
 
-**test** 结束后在同目录写入 `test_metadata.json`（含 metrics）。
+预处理划分时会在 `processed_dir` 旁写入 `datasplit_meta.json`（划分来源、各 split 样本数、跳过数等），train 时会一并记入 `datasplit.sidecar`。
 
-`test` / `viz` 会按当前 **branch + dataset** 过滤 `results/` 下的实验供选择。
+**test** 结束后在同目录写入 `test_metadata.json`（含 metrics、datasplit 摘要、关联的 `experiment_metadata_path`）。
+
+`test` / `viz` 会按当前 **branch + dataset** 过滤 `results/` 下的实验供选择；列表中会显示备注摘要（`note=...`）。
 
 ### 数据集默认路径
 

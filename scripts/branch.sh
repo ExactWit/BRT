@@ -88,6 +88,7 @@ configure_dataset() {
     360)
       DATASET_ID="360"
       DATASET_DIR="${DATASET_DIR:-/data/hdd/datasets/s2.0.0/processed/brt}"
+      SPLIT_SOURCE_JSON="${SPLIT_SOURCE_JSON:-/data/hdd/datasets/s2.0.0/processed/dataset.json}"
       STEP_ROOT="${STEP_ROOT:-/data/hdd/datasets/s2.0.0/breps/step}"
       NUM_CLASSES="${NUM_CLASSES:-8}"
       NUM_CONTROL_PTS="${NUM_CONTROL_PTS:-28}"
@@ -96,6 +97,7 @@ configure_dataset() {
     mechcad)
       DATASET_ID="mechcad"
       DATASET_DIR="${DATASET_DIR:-/data/hdd/datasets/mechcad/processed}"
+      SPLIT_SOURCE_JSON="${SPLIT_SOURCE_JSON:-}"
       STEP_ROOT="${STEP_ROOT:-/data/hdd/datasets/mechcad/mechcad}"
       NUM_CLASSES="${NUM_CLASSES:-25}"
       NUM_CONTROL_PTS="${NUM_CONTROL_PTS:-28}"
@@ -129,23 +131,35 @@ metadata_matches() {
   local meta_file="$1"
   local branch="$2"
   local dataset="$3"
-  python3 - "${meta_file}" "${branch}" "${dataset}" <<'PY'
+  python3 - "${meta_file}" "${branch}" "${dataset}" "${REPO_DIR}" <<'PY'
 import json, sys
+from pathlib import Path
+
+repo_dir = Path(sys.argv[4])
+sys.path.insert(0, str(repo_dir))
+from utils.experiment_metadata import (
+    meta_dataset_dir,
+    meta_dataset_id,
+    meta_git_branch,
+)
+
 path, branch, dataset = sys.argv[1:4]
 try:
     with open(path, encoding="utf-8") as f:
         meta = json.load(f)
 except Exception:
     sys.exit(1)
-if meta.get("git_branch") != branch:
+if meta_git_branch(meta) != branch:
     sys.exit(1)
-if meta.get("dataset") != dataset:
+if meta_dataset_id(meta) != dataset:
     sys.exit(1)
-print(meta.get("experiment_name", ""))
-print(meta.get("log_name", ""))
-print(meta.get("log_version", ""))
-print(meta.get("dataset_dir", ""))
-print(meta.get("num_classes", ""))
+run = meta.get("run") or {}
+print(run.get("experiment_name") or meta.get("experiment_name", ""))
+print(run.get("log_name") or meta.get("log_name", ""))
+print(run.get("log_version") or meta.get("log_version", ""))
+print(meta_dataset_dir(meta) or "")
+dataset_block = meta.get("dataset") if isinstance(meta.get("dataset"), dict) else {}
+print(dataset_block.get("num_classes") or meta.get("num_classes", ""))
 PY
 }
 
@@ -153,8 +167,19 @@ describe_run_dir() {
   local run_dir="$1"
   local branch="$2"
   local dataset="$3"
-  python3 - "${run_dir}" "${RESULTS_DIR}" "${branch}" "${dataset}" "${DATASET_DIR}" "${NUM_CLASSES}" <<'PY'
+  python3 - "${run_dir}" "${RESULTS_DIR}" "${branch}" "${dataset}" "${DATASET_DIR}" "${NUM_CLASSES}" "${REPO_DIR}" <<'PY'
 import json, pathlib, sys
+
+repo_dir = pathlib.Path(sys.argv[7])
+sys.path.insert(0, str(repo_dir))
+from utils.experiment_metadata import (
+    meta_dataset_dir,
+    meta_dataset_id,
+    meta_git_branch,
+    meta_note,
+    meta_num_classes,
+)
+
 run_dir, results_dir, branch, dataset, default_ds, default_nc = sys.argv[1:7]
 run_dir = pathlib.Path(run_dir)
 results_dir = pathlib.Path(results_dir)
@@ -171,23 +196,31 @@ num_classes = default_nc
 
 if exp_path.exists():
     exp = json.load(open(exp_path, encoding="utf-8"))
-    ds_dir = exp.get("dataset_dir") or ds_dir
-    if exp.get("num_classes") is not None:
-        num_classes = str(exp.get("num_classes"))
-    if exp.get("git_branch") == branch and exp.get("dataset") == dataset:
+    ds_dir = meta_dataset_dir(exp) or ds_dir
+    nc = meta_num_classes(exp)
+    if nc is not None:
+        num_classes = str(nc)
+    if meta_git_branch(exp) == branch and meta_dataset_id(exp) == dataset:
         tags.append("match")
     else:
         tags.append(
-            f"meta: branch={exp.get('git_branch', '?')}, dataset={exp.get('dataset', '?')}"
+            f"meta: branch={meta_git_branch(exp) or '?'}, dataset={meta_dataset_id(exp) or '?'}"
         )
+    note = meta_note(exp)
+    if note:
+        tags.append(f"note={note[:40]}{'...' if len(note) > 40 else ''}")
 elif test_path.exists():
     test = json.load(open(test_path, encoding="utf-8"))
-    ds_dir = test.get("dataset_dir") or ds_dir
-    if test.get("git_branch") == branch and test.get("dataset") == dataset:
+    ds_dir = test.get("dataset_dir") or (test.get("dataset") or {}).get("processed_dir") or ds_dir
+    git_branch = test.get("git_branch") or (test.get("git") or {}).get("branch")
+    dataset_id = test.get("dataset")
+    if isinstance(dataset_id, dict):
+        dataset_id = dataset_id.get("id")
+    if git_branch == branch and dataset_id == dataset:
         tags.append("match")
     else:
         tags.append(
-            f"meta: branch={test.get('git_branch', '?')}, dataset={test.get('dataset', '?')}"
+            f"meta: branch={git_branch or '?'}, dataset={dataset_id or '?'}"
         )
 else:
     tags.append("no metadata")
@@ -338,30 +371,57 @@ run_train() {
   branch_tag="$(sanitize_name "${branch}")"
   local experiment_name
   experiment_name="${EXPERIMENT_NAME:-${branch_tag}_${DATASET_ID}}"
-  local batch_size num_workers gpu max_epochs
+  local batch_size num_workers gpu max_epochs experiment_note
   batch_size="${BATCH_SIZE:-16}"
   num_workers="${NUM_WORKERS:-4}"
   gpu="${GPU:-0}"
   max_epochs="${MAX_EPOCHS:-1000}"
+  experiment_note="${EXPERIMENT_NOTE:-}"
+
+  if [[ -z "${experiment_note}" ]]; then
+    echo "" >&2
+    echo "实验备注（可选，直接回车跳过）：" >&2
+    if [[ -r /dev/tty ]]; then
+      read -r -p "> " experiment_note </dev/tty
+    else
+      read -r -p "> " experiment_note
+    fi
+  fi
+
+  local train_args=(
+    --num_classes "${NUM_CLASSES}"
+    --dataset_dir "${DATASET_DIR}"
+    --batch_size "${batch_size}"
+    --num_workers "${num_workers}"
+    --gpu "${gpu}"
+    --num_control_pts "${NUM_CONTROL_PTS}"
+    --experiment_name "${experiment_name}"
+    --max_epochs "${max_epochs}"
+    --git_branch "${branch}"
+    --dataset_id "${DATASET_ID}"
+  )
+  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
+    train_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
+  fi
+  if [[ -n "${experiment_note}" ]]; then
+    train_args+=(--experiment_note "${experiment_note}")
+  fi
 
   echo "[branch.sh] train"
   echo "  branch          : ${branch}"
   echo "  dataset         : ${DATASET_ID}"
   echo "  dataset_dir     : ${DATASET_DIR}"
   echo "  experiment_name : ${experiment_name}"
+  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
+    echo "  split_source    : ${SPLIT_SOURCE_JSON}"
+  fi
+  if [[ -n "${experiment_note}" ]]; then
+    echo "  note            : ${experiment_note}"
+  fi
 
   mkdir -p logs
   python segmentation.py train \
-    --num_classes "${NUM_CLASSES}" \
-    --dataset_dir "${DATASET_DIR}" \
-    --batch_size "${batch_size}" \
-    --num_workers "${num_workers}" \
-    --gpu "${gpu}" \
-    --num_control_pts "${NUM_CONTROL_PTS}" \
-    --experiment_name "${experiment_name}" \
-    --max_epochs "${max_epochs}" \
-    --git_branch "${branch}" \
-    --dataset_id "${DATASET_ID}" \
+    "${train_args[@]}" \
     2>&1 | tee "logs/train_${branch_tag}_${DATASET_ID}_$(date +%m%d_%H%M%S).log"
 }
 
@@ -378,16 +438,23 @@ run_test() {
   echo "  checkpoint  : ${SELECTED_CHECKPOINT}"
   echo "  dataset_dir : ${DATASET_DIR}"
 
-  python segmentation.py test \
-    --num_classes "${NUM_CLASSES}" \
-    --dataset_dir "${DATASET_DIR}" \
-    --batch_size "${batch_size}" \
-    --num_workers "${num_workers}" \
-    --gpu "${gpu}" \
-    --num_control_pts "${NUM_CONTROL_PTS}" \
-    --checkpoint "${SELECTED_CHECKPOINT}" \
-    --git_branch "${branch}" \
+  local test_args=(
+    --num_classes "${NUM_CLASSES}"
+    --dataset_dir "${DATASET_DIR}"
+    --batch_size "${batch_size}"
+    --num_workers "${num_workers}"
+    --gpu "${gpu}"
+    --num_control_pts "${NUM_CONTROL_PTS}"
+    --checkpoint "${SELECTED_CHECKPOINT}"
+    --git_branch "${branch}"
     --dataset_id "${DATASET_ID}"
+  )
+  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
+    test_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
+  fi
+
+  python segmentation.py test \
+    "${test_args[@]}"
 }
 
 run_viz() {

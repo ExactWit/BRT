@@ -13,6 +13,13 @@ import datasets
 
 import torch
 
+from utils.experiment_metadata import (
+    build_experiment_metadata,
+    collect_datasplit_info,
+    collect_git_info,
+    write_experiment_metadata as persist_experiment_metadata,
+)
+
 parser = argparse.ArgumentParser(
     "Segmentation")
 parser.add_argument(
@@ -91,8 +98,21 @@ parser.add_argument(
     default=None,
     help="Dataset id recorded in experiment metadata (e.g. 360, mechcad)",
 )
+parser.add_argument(
+    "--experiment_note",
+    type=str,
+    default=None,
+    help="Free-form note for this experiment run (recorded in metadata)",
+)
+parser.add_argument(
+    "--split_source_json",
+    type=str,
+    default=None,
+    help="Original split definition JSON (e.g. BRepNet dataset.json); optional",
+)
 
 args = parser.parse_args()
+repo_dir = pathlib.Path(__file__).parent
 
 experiment_name = args.experiment_name
 
@@ -120,24 +140,31 @@ def write_json(path: pathlib.Path, payload: dict) -> None:
 def write_experiment_metadata() -> None:
     if args.traintest != "train":
         return
-    if args.git_branch is None and args.dataset_id is None:
-        return
-    write_json(
-        run_dir / "experiment_metadata.json",
-        {
-            "git_branch": args.git_branch,
-            "dataset": args.dataset_id,
-            "dataset_dir": args.dataset_dir,
-            "experiment_name": experiment_name,
-            "log_name": log_name,
-            "log_version": log_version,
-            "num_classes": args.num_classes,
-            "num_control_pts": args.num_control_pts,
-            "batch_size": args.batch_size,
-            "max_epochs": args.max_epochs,
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        },
+    train_args = {
+        "batch_size": args.batch_size,
+        "max_epochs": args.max_epochs,
+        "gpu": args.gpu,
+        "num_workers": args.num_workers,
+        "num_classes": args.num_classes,
+        "num_control_pts": args.num_control_pts,
+        "method": args.method,
+        "precision": args.precision,
+        "resume_from": args.resume_from,
+    }
+    metadata = build_experiment_metadata(
+        repo_dir=repo_dir,
+        run_dir=run_dir,
+        experiment_name=experiment_name,
+        log_name=log_name,
+        log_version=log_version,
+        dataset_dir=args.dataset_dir,
+        dataset_id=args.dataset_id,
+        git_branch=args.git_branch,
+        note=args.experiment_note,
+        split_source_json=args.split_source_json,
+        train_args=train_args,
     )
+    persist_experiment_metadata(run_dir / "experiment_metadata.json", metadata)
 
 checkpoint_callback = ModelCheckpoint(
     monitor="val_iou",
@@ -219,17 +246,34 @@ else:
     metrics = results[0] if results else {}
     ckpt_path = pathlib.Path(args.checkpoint)
     run_dir_for_test = ckpt_path.parent
-    write_json(
-        run_dir_for_test / "test_metadata.json",
-        {
-            "checkpoint": str(ckpt_path.resolve()),
-            "dataset_dir": args.dataset_dir,
-            "git_branch": args.git_branch,
-            "dataset": args.dataset_id,
-            "tested_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            "metrics": metrics,
+    exp_meta_path = run_dir_for_test / "experiment_metadata.json"
+    experiment_ref = None
+    if exp_meta_path.exists():
+        with open(exp_meta_path, encoding="utf-8") as f:
+            experiment_ref = json.load(f)
+    test_metadata = {
+        "schema_version": 1,
+        "tested_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "checkpoint": str(ckpt_path.resolve()),
+        "git": collect_git_info(repo_dir, branch=args.git_branch),
+        "dataset": {
+            "id": args.dataset_id,
+            "processed_dir": str(pathlib.Path(args.dataset_dir).resolve()),
         },
-    )
+        "datasplit": collect_datasplit_info(
+            pathlib.Path(args.dataset_dir),
+            dataset_id=args.dataset_id,
+            split_source_json=args.split_source_json,
+        ),
+        "metrics": metrics,
+        "experiment_metadata_path": str(exp_meta_path.resolve()) if exp_meta_path.exists() else None,
+        "experiment_run": (experiment_ref or {}).get("run"),
+        # legacy flat keys for older tooling
+        "git_branch": args.git_branch,
+        "dataset": args.dataset_id,
+        "dataset_dir": args.dataset_dir,
+    }
+    write_json(run_dir_for_test / "test_metadata.json", test_metadata)
     print(
         f"Classfication Loss on test set: {metrics.get('test_loss')}"
     )

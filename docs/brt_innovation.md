@@ -172,7 +172,8 @@ results/<dataset>/<date>/<tag>/
 |------|------|------|
 | `BRANCH_WORKFLOW` | `df34aeb` | scheme 分支工作流约定 |
 | `RESULTS_LAYOUT_V2` | `10cc0c7` | results 路径 `dataset/date/tag` + `--run_tag` |
-| `VIZ_METRICS_IN_FILENAME` | `c919f61` | viz 输出文件名含 `iou` / `acc` |
+| `VIZ_METRICS_IN_FILENAME` | `c919f61` | viz 输出文件名含 `iou` / `acc`（已 supersede） |
+| `VIZ_COMPARE_V1` | `VIZ_COMPARE_V1` | GT+Pred 单文件并排；新文件名格式；STEP 面色 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -244,20 +245,38 @@ results/<dataset>/<date>/<tag>/
 
 ### viz 输出
 
-`viz` 从 test 划分选样本，调用 `scripts/viz_segmentation.py`。
+`viz` 从 test 划分选样本，调用 `scripts/viz_segmentation.py`（参考 BRepNet `brepnet-viz` 的并排对比逻辑）。
 
-输出目录：`<run_dir>/viz/<stem>/`（可用 `VIZ_OUTPUT_DIR` 覆盖 run_dir 部分）。
+输出目录：`<run_dir>/viz/`（可用 `VIZ_OUTPUT_DIR` 覆盖）。
 
-**文件名**（自 infra 锚点 `c919f61` 起）在 pred/gt 中嵌入该样本的 **macro IoU** 与 **accuracy**：
+**交互时会打印标签颜色对照表**（终端色块 + 中英文类名）。Fusion360 8 类配色与 `brepnet-viz` 一致，易于区分。
+
+**单文件 GT+Pred 并排**（自 infra 锚点 `VIZ_COMPARE_V1` 起）：
+
+- 布局：**左侧 Ground Truth | 右侧 Prediction**
+- **PLY**：三角面色（MeshLab 等）
+- **STEP**：XCAF 面色（**支持染色**；FreeCAD 等查看器可显示左右两件分色模型）
+
+**文件名**：
 
 ```text
-{stem}_pred_iou0.8532_acc0.9201.ply
-{stem}_gt_iou0.8532_acc0.9201.ply
+{dataset}_{编号}_{hash}_acc{acc}_iou{iou}.ply
 ```
 
-STEP 格式同理：`{stem}_pred_iou0.8532_acc0.9201.stp`。指标与训练时 `torchmetrics` 的 multiclass macro IoU / accuracy 一致（逐面分类，单样本统计）。
+示例：`fusion360_0042_b2d7897a_acc92.0_iou85.3.ply`
 
-同目录写入 `viz_summary.json`，含 `sample_iou`、`sample_acc`、`metric_tag`、`outputs` 等字段。
+- `{dataset}`：`fusion360` / `mechcad`
+- `{编号}`：test 划分内 4 位索引
+- `{hash}`：样本 stem 中的 hash 段（如 `100142_b2d7897a_5` → `b2d7897a`）
+- `{acc}` / `{iou}`：该样本 macro accuracy / macro IoU（百分比，一位小数）
+
+同目录写入 `{basename}.json` 摘要（含 `class_names`、`pred_labels`、`gt_labels`）。
+
+仅查看图例（无需 checkpoint）：
+
+```bash
+python scripts/viz_segmentation.py --print_legend --dataset_id 360 --num_classes 8
+```
 
 ### 环境变量（可选）
 

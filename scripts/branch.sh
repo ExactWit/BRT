@@ -484,11 +484,17 @@ run_viz() {
   echo "  sample     : ${SAMPLE_INDEX} (${SAMPLE_STEM})"
   echo "  format     : ${format}"
   echo "  output_dir : ${out_dir}"
+  if [[ "${format}" == "stp" ]]; then
+    echo "  说明       : STEP 使用 XCAF 面色（左 GT / 右 Pred），FreeCAD 等可查看"
+  else
+    echo "  说明       : PLY 左 GT / 右 Pred 并排对比"
+  fi
 
   python "${REPO_DIR}/scripts/viz_segmentation.py" \
     --checkpoint "${SELECTED_CHECKPOINT}" \
     --dataset_dir "${DATASET_DIR}" \
     --dataset_id "${DATASET_ID}" \
+    --num_classes "${NUM_CLASSES}" \
     --step_root "${STEP_ROOT}" \
     --split test \
     --index "${SAMPLE_INDEX}" \

@@ -177,7 +177,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_STEP_COLOR_FIX` | `a74e983` | STEP 正确写入 XCAF 面色（SetColorMode + AddShape 后设色） |
 | `VIZ_LOOP` | `32ac3b0` | branch.sh viz 循环导出，quit 退出 |
 | `TEST_PER_SAMPLE` | `8fcd876` | test 写 per-sample iou/acc；viz 按 iou 升序列表 |
-| `VIZ_COMPARE_GAP` | `VIZ_COMPARE_GAP` | GT/Pred 间距改为相对 X 宽度比例（默认 0.5） |
+| `VIZ_COMPARE_GAP` | `6ede060` | GT/Pred 间距改为相对 X 宽度比例（默认 0.5） |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。

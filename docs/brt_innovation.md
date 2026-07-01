@@ -178,6 +178,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_COMPARE_V1` | `b680039` | GT+Pred 单文件并排；新文件名格式 |
 | `VIZ_STEP_COLOR_FIX` | `a74e983` | STEP 正确写入 XCAF 面色（SetColorMode + AddShape 后设色） |
 | `VIZ_LOOP` | `32ac3b0` | branch.sh viz 循环导出，quit 退出 |
+| `TEST_PER_SAMPLE` | `8fcd876` | test 写 per-sample iou/acc；viz 按 iou 升序列表 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -236,9 +237,11 @@ results/<dataset>/<date>/<tag>/
 
 预处理划分时会在 `processed_dir` 旁写入 `datasplit_meta.json`（划分来源、各 split 样本数、跳过数等），train 时会一并记入 `datasplit.sidecar`。
 
-**test** 结束后在同目录写入 `test_metadata.json`（含 metrics、datasplit 摘要、关联的 `experiment_metadata_path`）。
+**test** 结束后在同目录写入 `test_metadata.json`（含 metrics、datasplit 摘要、关联的 `experiment_metadata_path`），以及 **`test_per_sample.json`**（每个 test 样本的 `stem` / `index` / `iou` / `acc`）。
 
 `test` / `viz` 会按当前 **branch + dataset** 过滤 `results/` 下的实验供选择；列表中会显示备注摘要（`note=...`）。
+
+**viz 样本列表（自 infra 锚点 `TEST_PER_SAMPLE` 起）**：进入 viz 前若 run 目录无有效 `test_per_sample.json`，会自动跑一次 test；样本菜单按 **per-sample iou 升序**（最差优先）排列。
 
 ### 数据集默认路径
 
@@ -251,7 +254,7 @@ results/<dataset>/<date>/<tag>/
 
 `viz` 从 test 划分选样本，调用 `scripts/viz_segmentation.py`（参考 BRepNet `brepnet-viz` 的并排对比逻辑）。
 
-**viz session（自 infra 锚点 `32ac3b0` 起）**：选定 run 与导出格式后进入循环，可连续导出多个样本；每次完成后输入 `quit` 退出，回车则继续选下一个样本（无需重新进 `branch.sh`）。
+**viz session（自 infra 锚点 `32ac3b0` 起）**：选定 run 与导出格式后进入循环，可连续导出多个样本；每次完成后输入 `quit` 退出，回车则继续选下一个样本（无需重新进 `branch.sh`）。样本列表按 **test per-sample iou 升序**（见 `TEST_PER_SAMPLE`）。
 
 输出目录：`<run_dir>/viz/`（可用 `VIZ_OUTPUT_DIR` 覆盖）。
 

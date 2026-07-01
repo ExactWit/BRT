@@ -19,6 +19,11 @@ from utils.experiment_metadata import (
     collect_git_info,
     write_experiment_metadata as persist_experiment_metadata,
 )
+from utils.test_per_sample import (
+    PER_SAMPLE_FILENAME,
+    build_per_sample_payload,
+    write_per_sample_results,
+)
 
 parser = argparse.ArgumentParser(
     "Segmentation")
@@ -274,6 +279,7 @@ else:
             split_source_json=args.split_source_json,
         ),
         "metrics": metrics,
+        "per_sample_path": str((run_dir_for_test / PER_SAMPLE_FILENAME).resolve()),
         "experiment_metadata_path": str(exp_meta_path.resolve()) if exp_meta_path.exists() else None,
         "experiment_run": (experiment_ref or {}).get("run"),
         # legacy flat keys for older tooling
@@ -282,6 +288,13 @@ else:
         "dataset_dir": args.dataset_dir,
     }
     write_json(run_dir_for_test / "test_metadata.json", test_metadata)
+    per_sample_payload = build_per_sample_payload(
+        samples=getattr(model, "per_sample_test_results", []),
+        checkpoint=ckpt_path,
+        dataset_dir=pathlib.Path(args.dataset_dir),
+        dataset_id=args.dataset_id,
+    )
+    write_per_sample_results(run_dir_for_test / PER_SAMPLE_FILENAME, per_sample_payload)
     print(
         f"Classfication Loss on test set: {metrics.get('test_loss')}"
     )

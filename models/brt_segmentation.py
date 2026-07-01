@@ -1,4 +1,6 @@
 # brt segmenation
+import pathlib
+
 from .brt import BRT
 from .encoders import _NonLinearClassifier
 from torch import nn
@@ -70,6 +72,34 @@ class SegmentationPL(pl.LightningModule):
             task="multiclass",
             num_classes=num_classes,
         )
+        self.per_sample_test_results: list[dict] = []
+
+    def on_test_start(self) -> None:
+        self.per_sample_test_results = []
+
+    def _sample_face_metrics(
+        self, pred: torch.Tensor, labels: torch.Tensor
+    ) -> tuple[float, float]:
+        num_classes = int(self.hparams.num_classes)
+        pred_t = pred.detach().long().cpu()
+        labels_t = labels.detach().long().cpu()
+        if pred_t.numel() == 0:
+            return 0.0, 0.0
+        acc = float(
+            torchmetrics.functional.accuracy(
+                pred_t, labels_t, task="multiclass", num_classes=num_classes
+            )
+        )
+        iou = float(
+            torchmetrics.functional.jaccard_index(
+                pred_t,
+                labels_t,
+                task="multiclass",
+                num_classes=num_classes,
+                average="macro",
+            )
+        )
+        return acc, iou
 
     def forward(self, batched_graph):
         logits = self.model(batched_graph)
@@ -146,8 +176,30 @@ class SegmentationPL(pl.LightningModule):
         loss = F.cross_entropy(logits, labels, reduction="mean")
         self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True, batch_size=self.getBatchSize(batch))
         preds = F.softmax(logits, dim=-1)
+        pred_classes = logits.argmax(dim=-1)
         self.test_iou(preds, labels)
         self.test_acc(preds, labels)
+
+        num_faces_list = batch["num_faces_per_solid"]
+        offset = 0
+        filenames = batch.get("filename") or []
+        for sample_idx in range(len(num_faces_list)):
+            n_faces = int(num_faces_list[sample_idx].item())
+            sample_pred = pred_classes[offset : offset + n_faces]
+            sample_labels = labels[offset : offset + n_faces]
+            acc, iou = self._sample_face_metrics(sample_pred, sample_labels)
+            face_path = filenames[sample_idx] if sample_idx < len(filenames) else ""
+            stem = pathlib.Path(face_path).stem if face_path else f"batch{batch_idx}_sample{sample_idx}"
+            self.per_sample_test_results.append(
+                {
+                    "stem": stem,
+                    "face": face_path,
+                    "acc": acc,
+                    "iou": iou,
+                    "num_faces": n_faces,
+                }
+            )
+            offset += n_faces
         return loss
 
     def on_test_epoch_end(self):

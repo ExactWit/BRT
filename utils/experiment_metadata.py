@@ -120,6 +120,11 @@ def build_experiment_metadata(
     dataset_dir: str,
     dataset_id: str | None = None,
     git_branch: str | None = None,
+    model_id: str | None = None,
+    model_label: str | None = None,
+    model_commit: str | None = None,
+    model_commit_full: str | None = None,
+    model_status: str | None = None,
     note: str | None = None,
     split_source_json: str | None = None,
     train_args: dict[str, Any] | None = None,
@@ -157,6 +162,15 @@ def build_experiment_metadata(
         "note": note or "",
         "tags": [],
     }
+    if model_id or model_commit:
+        metadata["model"] = {
+            "id": model_id,
+            "label": model_label,
+            "commit": model_commit,
+            "commit_full": model_commit_full,
+            "branch": git_branch,
+            "status": model_status,
+        }
     return metadata
 
 
@@ -184,6 +198,39 @@ def meta_git_branch(meta: dict[str, Any]) -> str | None:
     if meta.get("git_branch"):
         return meta["git_branch"]
     return (meta.get("git") or {}).get("branch")
+
+
+def meta_model_id(meta: dict[str, Any]) -> str | None:
+    model = meta.get("model")
+    if isinstance(model, dict):
+        return model.get("id")
+    return None
+
+
+def meta_model_commit(meta: dict[str, Any]) -> str | None:
+    model = meta.get("model")
+    if isinstance(model, dict):
+        return model.get("commit") or model.get("commit_full")
+    return None
+
+
+def metadata_matches_model(
+    meta: dict[str, Any],
+    *,
+    model_id: str | None = None,
+    branch: str | None = None,
+    dataset: str | None = None,
+) -> bool:
+    if dataset is not None and meta_dataset_id(meta) != dataset:
+        return False
+    recorded_model_id = meta_model_id(meta)
+    if model_id:
+        if recorded_model_id:
+            return recorded_model_id == model_id
+        return meta_git_branch(meta) == branch
+    if branch is not None and meta_git_branch(meta) != branch:
+        return False
+    return True
 
 
 def meta_dataset_id(meta: dict[str, Any]) -> str | None:

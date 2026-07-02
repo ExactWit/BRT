@@ -109,6 +109,36 @@ parser.add_argument(
     help="Git branch name recorded in experiment metadata",
 )
 parser.add_argument(
+    "--model_id",
+    type=str,
+    default=None,
+    help="Registered model id (e.g. scheme-a-v1) recorded in experiment metadata",
+)
+parser.add_argument(
+    "--model_label",
+    type=str,
+    default=None,
+    help="Human-readable model label for experiment metadata",
+)
+parser.add_argument(
+    "--model_commit",
+    type=str,
+    default=None,
+    help="Pinned git commit for the selected model",
+)
+parser.add_argument(
+    "--model_commit_full",
+    type=str,
+    default=None,
+    help="Full git commit hash for the selected model",
+)
+parser.add_argument(
+    "--model_status",
+    type=str,
+    default=None,
+    help="Model registry status (active/archived/wip)",
+)
+parser.add_argument(
     "--dataset_id",
     type=str,
     default=None,
@@ -178,6 +208,11 @@ def write_experiment_metadata() -> None:
         dataset_dir=args.dataset_dir,
         dataset_id=args.dataset_id,
         git_branch=args.git_branch,
+        model_id=args.model_id,
+        model_label=args.model_label,
+        model_commit=args.model_commit,
+        model_commit_full=args.model_commit_full,
+        model_status=args.model_status,
         note=args.experiment_note,
         split_source_json=args.split_source_json,
         train_args=train_args,

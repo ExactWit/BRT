@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Interactive launcher: pick git branch, dataset, and train / test / viz.
+# Interactive launcher: pick model (pinned commit), dataset, and train / test / viz.
 set -eo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -8,6 +8,8 @@ CONDA_SH="${HOME}/software/miniconda3/etc/profile.d/conda.sh"
 
 # shellcheck source=scripts/run_layout.sh
 source "${REPO_DIR}/scripts/run_layout.sh"
+# shellcheck source=scripts/model_registry.sh
+source "${REPO_DIR}/scripts/model_registry.sh"
 
 if [[ -f "${CONDA_SH}" ]]; then
   # shellcheck source=/dev/null
@@ -134,29 +136,27 @@ ensure_dataset_ready() {
 
 metadata_matches() {
   local meta_file="$1"
-  local branch="$2"
-  local dataset="$3"
-  python3 - "${meta_file}" "${branch}" "${dataset}" "${REPO_DIR}" <<'PY'
+  local model_id="$2"
+  local branch="$3"
+  local dataset="$4"
+  python3 - "${meta_file}" "${model_id}" "${branch}" "${dataset}" "${REPO_DIR}" <<'PY'
 import json, sys
 from pathlib import Path
 
-repo_dir = Path(sys.argv[4])
+repo_dir = Path(sys.argv[5])
 sys.path.insert(0, str(repo_dir))
 from utils.experiment_metadata import (
     meta_dataset_dir,
-    meta_dataset_id,
-    meta_git_branch,
+    metadata_matches_model,
 )
 
-path, branch, dataset = sys.argv[1:4]
+path, model_id, branch, dataset = sys.argv[1:5]
 try:
     with open(path, encoding="utf-8") as f:
         meta = json.load(f)
 except Exception:
     sys.exit(1)
-if meta_git_branch(meta) != branch:
-    sys.exit(1)
-if meta_dataset_id(meta) != dataset:
+if not metadata_matches_model(meta, model_id=model_id or None, branch=branch, dataset=dataset):
     sys.exit(1)
 run = meta.get("run") or {}
 print(run.get("experiment_name") or meta.get("experiment_name", ""))
@@ -170,22 +170,25 @@ PY
 
 describe_run_dir() {
   local run_dir="$1"
-  local branch="$2"
-  local dataset="$3"
-  python3 - "${run_dir}" "${RESULTS_DIR}" "${branch}" "${dataset}" "${DATASET_DIR}" "${NUM_CLASSES}" "${REPO_DIR}" <<'PY'
+  local model_id="$2"
+  local branch="$3"
+  local dataset="$4"
+  python3 - "${run_dir}" "${RESULTS_DIR}" "${model_id}" "${branch}" "${dataset}" "${DATASET_DIR}" "${NUM_CLASSES}" "${REPO_DIR}" <<'PY'
 import json, pathlib, sys
 
-repo_dir = pathlib.Path(sys.argv[7])
+repo_dir = pathlib.Path(sys.argv[8])
 sys.path.insert(0, str(repo_dir))
 from utils.experiment_metadata import (
     meta_dataset_dir,
     meta_dataset_id,
     meta_git_branch,
+    meta_model_id,
     meta_note,
     meta_num_classes,
+    metadata_matches_model,
 )
 
-run_dir, results_dir, branch, dataset, default_ds, default_nc = sys.argv[1:7]
+run_dir, results_dir, model_id, branch, dataset, default_ds, default_nc = sys.argv[1:8]
 run_dir = pathlib.Path(run_dir)
 results_dir = pathlib.Path(results_dir)
 try:
@@ -205,15 +208,19 @@ if exp_path.exists():
     nc = meta_num_classes(exp)
     if nc is not None:
         num_classes = str(nc)
-    if meta_git_branch(exp) == branch and meta_dataset_id(exp) == dataset:
+    if metadata_matches_model(exp, model_id=model_id or None, branch=branch, dataset=dataset):
         tags.append("match")
     else:
+        recorded_model = meta_model_id(exp) or "?"
         tags.append(
-            f"meta: branch={meta_git_branch(exp) or '?'}, dataset={meta_dataset_id(exp) or '?'}"
+            f"meta: model={recorded_model}, branch={meta_git_branch(exp) or '?'}, dataset={meta_dataset_id(exp) or '?'}"
         )
     note = meta_note(exp)
     if note:
         tags.append(f"note={note[:40]}{'...' if len(note) > 40 else ''}")
+    recorded_model = meta_model_id(exp)
+    if recorded_model:
+        tags.append(f"model={recorded_model}")
     best_ckpt = (exp.get("checkpoints") or {}).get("best") or {}
     best_ep = best_ckpt.get("epoch_1based")
     if best_ep is None and best_ckpt.get("epoch") is not None:
@@ -264,8 +271,9 @@ PY
 }
 
 find_matching_runs() {
-  local branch="$1"
-  local dataset="$2"
+  local model_id="$1"
+  local branch="$2"
+  local dataset="$3"
   RUN_LABELS=()
   RUN_DIRS=()
   RUN_CHECKPOINTS=()
@@ -290,7 +298,7 @@ find_matching_runs() {
 
   # 1) Runs with experiment_metadata matching branch + dataset (listed first)
   while IFS= read -r meta_file; do
-    mapfile -t parsed < <(metadata_matches "${meta_file}" "${branch}" "${dataset}" || true)
+    mapfile -t parsed < <(metadata_matches "${meta_file}" "${model_id}" "${branch}" "${dataset}" || true)
     [[ ${#parsed[@]} -eq 5 ]] || continue
     local run_dir ckpt
     run_dir="$(dirname "${meta_file}")"
@@ -301,7 +309,7 @@ find_matching_runs() {
     else
       continue
     fi
-    mapfile -t info < <(describe_run_dir "${run_dir}" "${branch}" "${dataset}")
+    mapfile -t info < <(describe_run_dir "${run_dir}" "${model_id}" "${branch}" "${dataset}")
     [[ ${#info[@]} -eq 5 ]] || continue
     add_run "${info[1]}" "${info[2]}" "${info[0]}" "${info[3]}" "${info[4]}"
   done < <(find "${RESULTS_DIR}" -name experiment_metadata.json 2>/dev/null | sort)
@@ -312,7 +320,7 @@ find_matching_runs() {
     local run_dir
     run_dir="$(dirname "${ckpt}")"
     [[ -n "${seen_dirs[$run_dir]:-}" ]] && continue
-    mapfile -t info < <(describe_run_dir "${run_dir}" "${branch}" "${dataset}")
+    mapfile -t info < <(describe_run_dir "${run_dir}" "${model_id}" "${branch}" "${dataset}")
     [[ ${#info[@]} -eq 5 ]] || continue
     add_run "${info[1]}" "${info[2]}" "${info[0]}" "${info[3]}" "${info[4]}"
   done < <(find "${RESULTS_DIR}" \( -name 'best.ckpt' -o -name 'last.ckpt' \) 2>/dev/null | sort -u)
@@ -325,10 +333,11 @@ find_matching_runs() {
 }
 
 pick_run() {
-  local branch="$1"
-  local dataset="$2"
+  local model_id="$1"
+  local branch="$2"
+  local dataset="$3"
   local picked
-  find_matching_runs "${branch}" "${dataset}"
+  find_matching_runs "${model_id}" "${branch}" "${dataset}"
   if [[ ${#RUN_LABELS[@]} -eq 0 ]]; then
     echo "[branch.sh] ERROR: results/ 下没有可用 checkpoint。"
     exit 1
@@ -352,8 +361,18 @@ pick_run() {
   exit 1
 }
 
+append_model_metadata_args() {
+  local -n _args=$1
+  if [[ -n "${SELECTED_MODEL_ID:-}" ]]; then
+    _args+=(--model_id "${SELECTED_MODEL_ID}")
+    _args+=(--model_label "${SELECTED_MODEL_LABEL}")
+    _args+=(--model_commit "${SELECTED_MODEL_COMMIT}")
+    _args+=(--model_commit_full "${SELECTED_MODEL_COMMIT_FULL}")
+    _args+=(--model_status "${SELECTED_MODEL_STATUS}")
+  fi
+}
+
 invoke_segmentation_test() {
-  local branch="$1"
   local batch_size num_workers gpu
   batch_size="${BATCH_SIZE:-16}"
   num_workers="${NUM_WORKERS:-4}"
@@ -367,9 +386,10 @@ invoke_segmentation_test() {
     --gpu "${gpu}"
     --num_control_pts "${NUM_CONTROL_PTS}"
     --checkpoint "${SELECTED_CHECKPOINT}"
-    --git_branch "${branch}"
+    --git_branch "${SELECTED_MODEL_BRANCH}"
     --dataset_id "${DATASET_ID}"
   )
+  append_model_metadata_args test_args
   if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
     test_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
   fi
@@ -378,7 +398,6 @@ invoke_segmentation_test() {
 }
 
 ensure_test_per_sample() {
-  local branch="$1"
   local per_sample="${SELECTED_RUN_DIR}/test_per_sample.json"
   if python3 - "${per_sample}" "${SELECTED_CHECKPOINT}" "${DATASET_DIR}" <<'PY'
 import json, pathlib, sys
@@ -403,7 +422,7 @@ PY
 
   echo "[branch.sh] 未找到有效的 per-sample test 结果 (${per_sample})" >&2
   echo "[branch.sh] 自动运行 test 以记录每个 test 样本的 iou/acc..." >&2
-  invoke_segmentation_test "${branch}"
+  invoke_segmentation_test
 }
 
 list_test_samples() {
@@ -515,14 +534,14 @@ backup_run_dir() {
 }
 
 run_train() {
-  local branch="$1"
   ensure_dataset_ready
-  local branch_tag
-  branch_tag="$(sanitize_name "${branch}")"
+  local model_tag
+  model_tag="$(sanitize_name "${SELECTED_MODEL_ID}")"
   local experiment_name run_tag log_date
   experiment_name="${EXPERIMENT_NAME:-${RESULTS_DATASET_NAME}}"
   log_date="${LOG_NAME:-$(date +%m%d)}"
-  run_tag="$(resolve_run_tag "${branch}")"
+  RUN_TAG="${SELECTED_MODEL_RUN_TAG}"
+  run_tag="$(resolve_run_tag "${SELECTED_MODEL_BRANCH}")"
   local batch_size num_workers gpu max_epochs experiment_note
   batch_size="${BATCH_SIZE:-16}"
   num_workers="${NUM_WORKERS:-4}"
@@ -551,9 +570,10 @@ run_train() {
     --log_name "${log_date}"
     --run_tag "${run_tag}"
     --max_epochs "${max_epochs}"
-    --git_branch "${branch}"
+    --git_branch "${SELECTED_MODEL_BRANCH}"
     --dataset_id "${DATASET_ID}"
   )
+  append_model_metadata_args train_args
   if [[ -n "${RESUME_FROM:-}" ]]; then
     train_args+=(--resume_from "${RESUME_FROM}")
   fi
@@ -565,7 +585,8 @@ run_train() {
   fi
 
   echo "[branch.sh] train"
-  echo "  branch          : ${branch}"
+  echo "  model           : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT} (${SELECTED_MODEL_STATUS})"
+  echo "  branch          : ${SELECTED_MODEL_BRANCH}"
   echo "  dataset         : ${DATASET_ID}"
   echo "  dataset_dir     : ${DATASET_DIR}"
   echo "  results_path    : results/${experiment_name}/${log_date}/${run_tag}"
@@ -576,19 +597,22 @@ run_train() {
     echo "  note            : ${experiment_note}"
   fi
 
+  if [[ -n "${SELECTED_MODEL_METRICS_DOC:-}" ]]; then
+    echo "  metrics_doc     : ${SELECTED_MODEL_METRICS_DOC}"
+  fi
+
   mkdir -p logs
   python segmentation.py train \
     "${train_args[@]}" \
-    2>&1 | tee "logs/train_${branch_tag}_${DATASET_ID}_$(date +%m%d_%H%M%S).log"
+    2>&1 | tee "logs/train_${model_tag}_${DATASET_ID}_$(date +%m%d_%H%M%S).log"
 }
 
 run_resume() {
-  local branch="$1"
-  pick_run "${branch}" "${DATASET_ID}"
+  pick_run "${SELECTED_MODEL_ID}" "${SELECTED_MODEL_BRANCH}" "${DATASET_ID}"
   ensure_dataset_ready
   parse_run_dir_layout "${SELECTED_RUN_DIR}"
 
-  local resume_ckpt branch_tag batch_size num_workers gpu max_epochs
+  local resume_ckpt model_tag batch_size num_workers gpu max_epochs
   resume_ckpt="${RESUME_CKPT:-${SELECTED_RUN_DIR}/last.ckpt}"
   if [[ ! -f "${resume_ckpt}" ]]; then
     if [[ -f "${SELECTED_RUN_DIR}/best.ckpt" ]]; then
@@ -606,7 +630,7 @@ run_resume() {
     echo "[branch.sh] SKIP_RUN_BACKUP=1，跳过 run 目录备份" >&2
   fi
 
-  branch_tag="$(sanitize_name "${branch}")"
+  model_tag="$(sanitize_name "${SELECTED_MODEL_ID}")"
   batch_size="${BATCH_SIZE:-16}"
   num_workers="${NUM_WORKERS:-4}"
   gpu="${GPU:-0}"
@@ -623,10 +647,11 @@ run_resume() {
     --log_name "${RUN_LOG_NAME}"
     --run_tag "${RUN_LOG_VERSION}"
     --max_epochs "${max_epochs}"
-    --git_branch "${branch}"
+    --git_branch "${SELECTED_MODEL_BRANCH}"
     --dataset_id "${DATASET_ID}"
     --resume_from "${resume_ckpt}"
   )
+  append_model_metadata_args train_args
   if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
     train_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
   fi
@@ -635,7 +660,8 @@ run_resume() {
   fi
 
   echo "[branch.sh] resume"
-  echo "  branch       : ${branch}"
+  echo "  model        : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT}"
+  echo "  branch       : ${SELECTED_MODEL_BRANCH}"
   echo "  dataset      : ${DATASET_ID}"
   echo "  dataset_dir  : ${DATASET_DIR}"
   echo "  run_dir      : ${SELECTED_RUN_DIR}"
@@ -646,27 +672,26 @@ run_resume() {
   mkdir -p logs
   python segmentation.py train \
     "${train_args[@]}" \
-    2>&1 | tee -a "logs/resume_${branch_tag}_${DATASET_ID}_${RUN_LOG_NAME}_${RUN_LOG_VERSION}_$(date +%m%d_%H%M%S).log"
+    2>&1 | tee -a "logs/resume_${model_tag}_${DATASET_ID}_${RUN_LOG_NAME}_${RUN_LOG_VERSION}_$(date +%m%d_%H%M%S).log"
 }
 
 run_test() {
-  local branch="$1"
-  pick_run "${branch}" "${DATASET_ID}"
+  pick_run "${SELECTED_MODEL_ID}" "${SELECTED_MODEL_BRANCH}" "${DATASET_ID}"
   ensure_dataset_ready
 
   echo "[branch.sh] test"
+  echo "  model       : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT}"
   echo "  checkpoint  : ${SELECTED_CHECKPOINT}"
   echo "  dataset_dir : ${DATASET_DIR}"
 
-  invoke_segmentation_test "${branch}"
+  invoke_segmentation_test
 }
 
 run_viz() {
-  local branch="$1"
   local format viz_action
-  pick_run "${branch}" "${DATASET_ID}"
+  pick_run "${SELECTED_MODEL_ID}" "${SELECTED_MODEL_BRANCH}" "${DATASET_ID}"
   ensure_dataset_ready
-  ensure_test_per_sample "${branch}"
+  ensure_test_per_sample
   pick_from_list format "选择导出格式 (本 session 内固定):" "ply" "stp"
   gpu="${GPU:-0}"
   local viz_gap
@@ -674,6 +699,7 @@ run_viz() {
   out_dir="${VIZ_OUTPUT_DIR:-${SELECTED_RUN_DIR}/viz}"
 
   echo "[branch.sh] viz session"
+  echo "  model      : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT}"
   echo "  checkpoint : ${SELECTED_CHECKPOINT}"
   echo "  format     : ${format}"
   echo "  output_dir : ${out_dir}"
@@ -731,27 +757,30 @@ main() {
     exit 1
   fi
 
-  mapfile -t BRANCHES < <(list_git_branches)
-  if [[ ${#BRANCHES[@]} -eq 0 ]]; then
-    echo "[branch.sh] ERROR: 没有本地分支。" >&2
+  load_model_registry
+  if [[ ${#MODEL_LABELS[@]} -eq 0 ]]; then
+    echo "[branch.sh] ERROR: model_registry.tsv 为空。" >&2
     exit 1
   fi
 
-  local branch_label branch dataset mode
+  local model_label dataset mode
   echo "[branch.sh] 仓库: ${REPO_DIR}" >&2
-  pick_from_list branch_label "选择 git 分支:" "${BRANCHES[@]}"
-  branch="$(branch_name_from_label "${branch_label}")"
-  checkout_branch "${branch}"
+  pick_from_list model_label "选择模型 (pinned commit):" "${MODEL_LABELS[@]}"
+  resolve_model_by_label "${model_label}"
+  checkout_model_ref "${SELECTED_MODEL_REF}" "${SELECTED_MODEL_BRANCH}"
+  if [[ "${SELECTED_MODEL_STATUS}" == "archived" ]]; then
+    echo "[branch.sh] 注意: 已归档模型 ${SELECTED_MODEL_ID} — ${SELECTED_MODEL_METRICS_DOC}" >&2
+  fi
 
   pick_from_list dataset "选择数据集:" "360" "mechcad"
   configure_dataset "${dataset}"
 
   pick_from_list mode "选择操作:" "train" "resume" "test" "viz"
   case "${mode}" in
-    train) run_train "${branch}" ;;
-    resume) run_resume "${branch}" ;;
-    test) run_test "${branch}" ;;
-    viz) run_viz "${branch}" ;;
+    train) run_train ;;
+    resume) run_resume ;;
+    test) run_test ;;
+    viz) run_viz ;;
   esac
 }
 

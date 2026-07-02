@@ -248,13 +248,36 @@ results/<dataset>/<date>/<tag>/
     "gpu": 0,
     "resume_from": null
   },
-  "note": "用户备注（branch.sh train 时会提示输入）"
+  "note": "用户备注（branch.sh train 时会提示输入）",
+  "checkpoints": {
+    "monitor": "val_iou",
+    "mode": "max",
+    "updated_at": "2026-07-01T18:00:00",
+    "best": {
+      "path": ".../best.ckpt",
+      "filename": "best.ckpt",
+      "epoch": 42,
+      "epoch_1based": 43,
+      "val_iou": 0.8123
+    },
+    "last": {
+      "path": ".../last.ckpt",
+      "filename": "last.ckpt",
+      "epoch": 99,
+      "epoch_1based": 100
+    }
+  },
+  "training_finished_at": "2026-07-01T18:00:00"
 }
 ```
 
+训练结束后会更新 `checkpoints` 与 `training_finished_at`（`epoch` 为 PL 内部 0-based 序号，`epoch_1based` 为常用展示序号）。
+
 预处理划分时会在 `processed_dir` 旁写入 `datasplit_meta.json`（划分来源、各 split 样本数、跳过数等），train 时会一并记入 `datasplit.sidecar`。
 
-**test** 结束后在同目录写入 `test_metadata.json`（含 metrics、datasplit 摘要、关联的 `experiment_metadata_path`），以及 **`test_per_sample.json`**（每个 test 样本的 `stem` / `index` / `iou` / `acc`）。
+**test / viz** 默认使用 **`best.ckpt`**（按 `val_iou` 最优）；仅当不存在 `best.ckpt` 时 fallback `last.ckpt`。**resume** 仍使用 `last.ckpt` 以恢复 optimizer 与 epoch 状态。
+
+**test** 结束后在同目录写入 `test_metadata.json`（含 metrics、`checkpoint_epoch` / `checkpoint_epoch_1based`、datasplit 摘要、关联的 `experiment_metadata_path`），以及 **`test_per_sample.json`**（每个 test 样本的 `stem` / `index` / `iou` / `acc`）。
 
 `test` / `viz` 会按当前 **branch + dataset** 过滤 `results/` 下的实验供选择；列表中会显示备注摘要（`note=...`）。
 

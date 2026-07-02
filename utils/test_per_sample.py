@@ -6,6 +6,8 @@ import json
 import pathlib
 from typing import Any
 
+from utils.checkpoint_info import checkpoint_record
+
 
 PER_SAMPLE_FILENAME = "test_per_sample.json"
 SCHEMA_VERSION = 1
@@ -36,9 +38,13 @@ def build_per_sample_payload(
         entry["index"] = stem_to_index.get(entry.get("stem", ""))
         enriched.append(entry)
 
+    ckpt_info = checkpoint_record(checkpoint) or {}
     return {
         "schema_version": SCHEMA_VERSION,
         "checkpoint": str(checkpoint.resolve()),
+        "checkpoint_kind": checkpoint.name.replace(".ckpt", ""),
+        "checkpoint_epoch": ckpt_info.get("epoch"),
+        "checkpoint_epoch_1based": ckpt_info.get("epoch_1based"),
         "dataset_dir": str(dataset_dir.resolve()),
         "dataset_id": dataset_id,
         "num_samples": len(enriched),

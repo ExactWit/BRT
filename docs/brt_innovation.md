@@ -196,6 +196,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_COMPARE_GAP` | `6ede060` | GT/Pred 间距改为相对 X 宽度比例（默认 0.5） |
 | `VIZ_INDEX_LOOKUP` | `4803b52` | viz 支持固有索引直达，回车进 iou 榜 |
 | `RESUME_TRAIN` | `463d4b8` | branch.sh resume 断点续训管线 |
+| `BEST_CKPT_TEST` | `86da2fc` | test/viz 用 best.ckpt；记录 best epoch 到 metadata |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。

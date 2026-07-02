@@ -225,7 +225,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_INDEX_LOOKUP` | `4803b52` | viz 支持固有索引直达，回车进 iou 榜 |
 | `RESUME_TRAIN` | `463d4b8` | branch.sh resume 断点续训管线 |
 | `BEST_CKPT_TEST` | `86da2fc` | test/viz 用 best.ckpt；记录 best epoch 到 metadata |
-| `MODEL_REGISTRY` | `MODEL_REGISTRY` | branch.sh 模型注册表 + pinned commit 选择 |
+| `MODEL_REGISTRY` | `e1bf914` | branch.sh 模型注册表 + pinned commit 选择 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。

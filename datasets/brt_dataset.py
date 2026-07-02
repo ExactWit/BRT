@@ -479,12 +479,19 @@ class BRTDataset_seg_online(BRTDataset):
         if type(wire_index)==list:
             wire_index=torch.tensor(wire_index,dtype=torch.long)
 
-        return {
+        coedge_sign = solid.get("coedge_sign")
+        if coedge_sign is not None:
+            coedge_sign = torch.tensor(coedge_sign, dtype=torch.float32)
+
+        payload = {
             'label':label,
             'edge':solid['edge'],
             'edge_index_length':edge_index_length,'wire_index_length':wire_index_length,
                 'adj_face_index_length':adj_face_index_length,
-                'edge_index':edge_index,'wire_index':wire_index,'adj_face_index':adj_face_index},perm_index
+                'edge_index':edge_index,'wire_index':wire_index,'adj_face_index':adj_face_index}
+        if coedge_sign is not None:
+            payload['coedge_sign'] = coedge_sign
+        return payload, perm_index
     def load_one_sample(self, item):
         # Load the graph using base class method
         """

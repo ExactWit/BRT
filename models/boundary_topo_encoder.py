@@ -222,3 +222,148 @@ class BoundaryOperatorTopoEncoder(nn.Module):
 
       adj_agg = self._aggregate_adj_faces(h_face, face_index, adj_face_index_length)
       return self.output_layer(torch.cat([h_face, adj_agg], dim=-1))
+
+
+def build_face_coedge_pairs(
+    wire_index: torch.Tensor,
+    coedge_index: torch.Tensor,
+    wire_index_length: torch.Tensor,
+    coedge_index_length: torch.Tensor,
+    device: torch.device,
+    coedge_sign: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Build (face_id, coedge_id, sign) along oriented wire boundaries.
+
+    BRT stores one feature row per oriented half-edge (coedge). When ``coedge_sign``
+    is absent, inner wires use -1 (first wire per face is treated as outer, +1).
+    """
+    n_faces = wire_index.shape[0]
+    n_wires = coedge_index.shape[0]
+    wire_to_face = torch.full((n_wires,), -1, dtype=torch.long, device=device)
+    wire_slot_on_face = torch.zeros(n_wires, dtype=torch.long, device=device)
+
+    for face_id in range(n_faces):
+        n_wires_on_face = int(wire_index_length[face_id].item())
+        if n_wires_on_face <= 0:
+            continue
+        wires = wire_index[face_id, :n_wires_on_face].to(device)
+        wire_to_face[wires] = face_id
+        for slot, wire_id in enumerate(wires.tolist()):
+            wire_slot_on_face[wire_id] = slot
+
+    face_ids: list[int] = []
+    coedge_ids: list[int] = []
+    signs: list[float] = []
+    for wire_id in range(n_wires):
+        face_id = int(wire_to_face[wire_id].item())
+        if face_id < 0:
+            continue
+        n_coedges = int(coedge_index_length[wire_id].item())
+        if n_coedges <= 0:
+            continue
+        coedges = coedge_index[wire_id, :n_coedges].tolist()
+        default_sign = 1.0 if int(wire_slot_on_face[wire_id].item()) == 0 else -1.0
+        for coedge_id in coedges:
+            face_ids.append(face_id)
+            coedge_ids.append(coedge_id)
+            if coedge_sign is not None:
+                signs.append(float(coedge_sign[coedge_id].item()))
+            else:
+                signs.append(default_sign)
+
+    if not face_ids:
+        empty = torch.empty(0, dtype=torch.long, device=device)
+        return empty, empty, torch.empty(0, device=device, dtype=torch.float32)
+
+    return (
+        torch.tensor(face_ids, dtype=torch.long, device=device),
+        torch.tensor(coedge_ids, dtype=torch.long, device=device),
+        torch.tensor(signs, dtype=torch.float32, device=device),
+    )
+
+
+def scatter_boundary_to_faces_signed(
+    h_coedge: torch.Tensor,
+    face_ids: torch.Tensor,
+    coedge_ids: torch.Tensor,
+    signs: torch.Tensor,
+    n_faces: int,
+) -> torch.Tensor:
+    """∂₂ with signed incidence; linear sum without averaging."""
+    dim = h_coedge.shape[-1]
+    agg = torch.zeros(n_faces, dim, device=h_coedge.device, dtype=h_coedge.dtype)
+    if face_ids.numel() == 0:
+        return agg
+
+    signed_messages = signs.unsqueeze(-1).to(h_coedge.dtype) * h_coedge[coedge_ids]
+    agg.index_add_(0, face_ids, signed_messages)
+    return agg
+
+
+def scatter_incident_faces_to_coedges_signed(
+    h_face: torch.Tensor,
+    face_ids: torch.Tensor,
+    coedge_ids: torch.Tensor,
+    signs: torch.Tensor,
+    n_coedges: int,
+) -> torch.Tensor:
+    """∂₂ᵀ with signed incidence; linear sum without averaging."""
+    dim = h_face.shape[-1]
+    agg = torch.zeros(n_coedges, dim, device=h_face.device, dtype=h_face.dtype)
+    if coedge_ids.numel() == 0:
+        return agg
+
+    signed_messages = signs.unsqueeze(-1).to(h_face.dtype) * h_face[face_ids]
+    agg.index_add_(0, coedge_ids, signed_messages)
+    return agg
+
+
+class BoundaryOperatorTopoEncoderA2(BoundaryOperatorTopoEncoder):
+    """Scheme A2: signed ∂₂ / ∂₂ᵀ without boundary averaging."""
+
+    def forward(
+        self,
+        edges,
+        faces,
+        edge_index,
+        wire_index,
+        face_index,
+        edge_index_length,
+        wire_index_length,
+        adj_face_index_length,
+        coedge_sign=None,
+    ):
+        h_coedge = edges
+        h_face = faces
+        device = h_coedge.device
+
+        face_ids, coedge_ids, signs = build_face_coedge_pairs(
+            wire_index,
+            edge_index,
+            wire_index_length,
+            edge_index_length,
+            device,
+            coedge_sign=coedge_sign,
+        )
+
+        for layer_idx in range(self.num_layers):
+            boundary_agg = scatter_boundary_to_faces_signed(
+                h_coedge, face_ids, coedge_ids, signs, h_face.shape[0]
+            )
+            adj_agg = self._aggregate_adj_faces(h_face, face_index, adj_face_index_length)
+
+            face_delta = self.face_update_layers[layer_idx](
+                torch.cat([h_face, boundary_agg, adj_agg], dim=-1)
+            )
+            h_face = self.face_norms[layer_idx](h_face + face_delta)
+
+            incident_face_agg = scatter_incident_faces_to_coedges_signed(
+                h_face, face_ids, coedge_ids, signs, h_coedge.shape[0]
+            )
+            coedge_delta = self.edge_update_layers[layer_idx](
+                torch.cat([h_coedge, incident_face_agg], dim=-1)
+            )
+            h_coedge = self.edge_norms[layer_idx](h_coedge + coedge_delta)
+
+        adj_agg = self._aggregate_adj_faces(h_face, face_index, adj_face_index_length)
+        return self.output_layer(torch.cat([h_face, adj_agg], dim=-1))

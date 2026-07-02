@@ -50,8 +50,13 @@ def build_data(solid, shape_att, edge_fn, *args, **kwargs):
             edge_dict[mapper.oriented_edge_index(edges[0])]["last"] = edges[-1]
 
     edges_feature = []
+    coedge_signs = []
     for face in solid.faces():
         face_index = face_mapper(face)
+        try:
+            outer_wire = face.outer_wire()
+        except Exception:
+            outer_wire = None
 
         wires = []
         faces_wire.append(wires)
@@ -60,6 +65,8 @@ def build_data(solid, shape_att, edge_fn, *args, **kwargs):
         adj_faces_indices.append(adj_faces)
 
         for wire in face.wires():
+            is_outer = outer_wire is not None and wire.is_same(outer_wire)
+            wire_sign = 1 if is_outer else -1
             wires.append(len(wire_edges))
             wire_data = []
             wire_edges.append(wire_data)
@@ -74,6 +81,7 @@ def build_data(solid, shape_att, edge_fn, *args, **kwargs):
                 wire_data.append(cnt)
                 cnt += 1
                 edges_feature.append(edge_feat)
+                coedge_signs.append(wire_sign)
 
                 e = edge
 
@@ -100,6 +108,7 @@ def build_data(solid, shape_att, edge_fn, *args, **kwargs):
         "edge_index": wire_edges,
         "wire_index": faces_wire,
         "adj_face_index": adj_faces_indices,
+        "coedge_sign": coedge_signs,
         "label": torch.tensor(labels, dtype=torch.long),
     }
 
@@ -140,8 +149,13 @@ def build_data_no_label(solid, edge_fn, *args, **kwargs):
             edge_dict[mapper.oriented_edge_index(edges[0])]["last"] = edges[-1]
 
     edges_feature = []
+    coedge_signs = []
     for face in solid.faces():
         face_index = face_mapper(face)
+        try:
+            outer_wire = face.outer_wire()
+        except Exception:
+            outer_wire = None
 
         wires = []
         faces_wire.append(wires)
@@ -150,6 +164,8 @@ def build_data_no_label(solid, edge_fn, *args, **kwargs):
         adj_faces_indices.append(adj_faces)
 
         for wire in face.wires():
+            is_outer = outer_wire is not None and wire.is_same(outer_wire)
+            wire_sign = 1 if is_outer else -1
             wires.append(len(wire_edges))
             wire_data = []
             wire_edges.append(wire_data)
@@ -164,6 +180,7 @@ def build_data_no_label(solid, edge_fn, *args, **kwargs):
                 wire_data.append(cnt)
                 cnt += 1
                 edges_feature.append(edge_feat)
+                coedge_signs.append(wire_sign)
 
                 e = edge
 
@@ -190,6 +207,7 @@ def build_data_no_label(solid, edge_fn, *args, **kwargs):
         "edge_index": wire_edges,
         "wire_index": faces_wire,
         "adj_face_index": adj_faces_indices,
+        "coedge_sign": coedge_signs,
     }
 
 

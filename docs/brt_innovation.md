@@ -135,7 +135,7 @@ $$\mathcal{L}_{\mathrm{bdry}} = \sum_f \Big\| \psi(h_f) - \sum_{e \in \partial f
 
 ## 交互式实验脚本 `scripts/branch.sh`
 
-在 **main** 分支提供的统一入口，自动切换 git 分支、选择数据集并执行 train / test / viz。
+在 **main** 分支提供的统一入口，自动切换 git 分支、选择数据集并执行 train / resume / test / viz。
 
 ```bash
 cd ~/workspace/repo/BRT
@@ -146,7 +146,23 @@ bash scripts/branch.sh
 
 1. 列出本地 git 分支并 `checkout` 到所选分支
 2. 选择数据集：`360` | `mechcad`
-3. 选择操作：`train` | `test` | `viz`
+3. 选择操作：`train` | `resume` | `test` | `viz`
+
+### 断点续训（resume）
+
+自 infra 锚点 `463d4b8` 起，`branch.sh` 提供 **resume** 管线（等价于原 `scripts/resume_train_360.sh` 的交互版）：
+
+1. 按 branch + dataset 选择已有 **run**（与 test/viz 相同列表）
+2. 自动解析 `results/<dataset>/<date>/<tag>/` 路径，使用 **`last.ckpt`** 续训（无则 fallback `best.ckpt`）
+3. 续训前 **备份** 整个 run 目录到 `*.backup_YYYYMMDD_HHMMSS`（`SKIP_RUN_BACKUP=1` 可跳过）
+4. 以相同 `--experiment_name` / `--log_name` / `--run_tag` 调用 `segmentation.py train --resume_from ...`，**TensorBoard 曲线追加到原目录**
+
+```bash
+MAX_EPOCHS=500 bash scripts/branch.sh   # 选 resume
+SKIP_RUN_BACKUP=1 MAX_EPOCHS=500 bash scripts/branch.sh
+```
+
+底层机制：`Trainer.fit(ckpt_path=last.ckpt)` 恢复 optimizer/epoch 状态；须保持 log 路径与首次训练一致。
 
 ### 训练结果路径（新实验）
 
@@ -181,6 +197,7 @@ results/<dataset>/<date>/<tag>/
 | `TEST_PER_SAMPLE` | `8fcd876` | test 写 per-sample iou/acc；viz 按 iou 升序列表 |
 | `VIZ_COMPARE_GAP` | `6ede060` | GT/Pred 间距改为相对 X 宽度比例（默认 0.5） |
 | `VIZ_INDEX_LOOKUP` | `4803b52` | viz 支持固有索引直达，回车进 iou 榜 |
+| `RESUME_TRAIN` | `463d4b8` | branch.sh resume 断点续训管线 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。

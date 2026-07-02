@@ -13,10 +13,15 @@ import datasets
 
 import torch
 
+from utils.checkpoint_info import (
+    build_training_checkpoints_summary,
+    checkpoint_record,
+)
 from utils.experiment_metadata import (
     build_experiment_metadata,
     collect_datasplit_info,
     collect_git_info,
+    update_experiment_metadata,
     write_experiment_metadata as persist_experiment_metadata,
 )
 from utils.test_per_sample import (
@@ -244,6 +249,26 @@ results/{experiment_name}/{log_name}/{run_tag}/best.ckpt
         batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers
     )
     trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
+    meta_path = run_dir / "experiment_metadata.json"
+    checkpoints = build_training_checkpoints_summary(
+        run_dir,
+        checkpoint_callback=checkpoint_callback,
+        monitor="val_iou",
+        mode="max",
+    )
+    update_experiment_metadata(
+        meta_path,
+        {
+            "checkpoints": checkpoints,
+            "training_finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        },
+    )
+    best = checkpoints.get("best") or {}
+    if best.get("epoch") is not None:
+        print(
+            f"Best checkpoint: epoch={best['epoch']} "
+            f"(1-based: {best.get('epoch_1based')}), val_iou={best.get('val_iou')}"
+        )
 else:
     # Test
     assert (
@@ -258,6 +283,7 @@ else:
                            test_loader], verbose=True)
     metrics = results[0] if results else {}
     ckpt_path = pathlib.Path(args.checkpoint)
+    ckpt_info = checkpoint_record(ckpt_path) or {}
     run_dir_for_test = ckpt_path.parent
     exp_meta_path = run_dir_for_test / "experiment_metadata.json"
     experiment_ref = None
@@ -268,6 +294,10 @@ else:
         "schema_version": 1,
         "tested_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "checkpoint": str(ckpt_path.resolve()),
+        "checkpoint_kind": ckpt_path.name.replace(".ckpt", ""),
+        "checkpoint_epoch": ckpt_info.get("epoch"),
+        "checkpoint_epoch_1based": ckpt_info.get("epoch_1based"),
+        "checkpoint_val_iou": ckpt_info.get("val_iou"),
         "git": collect_git_info(repo_dir, branch=args.git_branch),
         "dataset": {
             "id": args.dataset_id,

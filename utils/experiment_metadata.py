@@ -166,6 +166,20 @@ def write_experiment_metadata(path: pathlib.Path, metadata: dict[str, Any]) -> N
         json.dump(metadata, f, indent=2, ensure_ascii=False)
 
 
+def load_experiment_metadata(path: pathlib.Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def update_experiment_metadata(path: pathlib.Path, updates: dict[str, Any]) -> dict[str, Any]:
+    metadata = load_experiment_metadata(path) or {}
+    metadata.update(updates)
+    write_experiment_metadata(path, metadata)
+    return metadata
+
+
 def meta_git_branch(meta: dict[str, Any]) -> str | None:
     if meta.get("git_branch"):
         return meta["git_branch"]

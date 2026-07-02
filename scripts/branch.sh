@@ -214,6 +214,12 @@ if exp_path.exists():
     note = meta_note(exp)
     if note:
         tags.append(f"note={note[:40]}{'...' if len(note) > 40 else ''}")
+    best_ckpt = (exp.get("checkpoints") or {}).get("best") or {}
+    best_ep = best_ckpt.get("epoch_1based")
+    if best_ep is None and best_ckpt.get("epoch") is not None:
+        best_ep = int(best_ckpt["epoch"]) + 1
+    if best_ep is not None:
+        tags.append(f"best@epoch={best_ep}")
 elif test_path.exists():
     test = json.load(open(test_path, encoding="utf-8"))
     ds_dir = test.get("dataset_dir") or (test.get("dataset") or {}).get("processed_dir") or ds_dir
@@ -242,7 +248,7 @@ if tags:
     label += " [" + ", ".join(tags) + "]"
 
 ckpt = ""
-for name in ("last.ckpt", "best.ckpt"):
+for name in ("best.ckpt", "last.ckpt"):
     candidate = run_dir / name
     if candidate.exists():
         ckpt = str(candidate)
@@ -288,10 +294,10 @@ find_matching_runs() {
     [[ ${#parsed[@]} -eq 5 ]] || continue
     local run_dir ckpt
     run_dir="$(dirname "${meta_file}")"
-    if [[ -f "${run_dir}/last.ckpt" ]]; then
-      ckpt="${run_dir}/last.ckpt"
-    elif [[ -f "${run_dir}/best.ckpt" ]]; then
+    if [[ -f "${run_dir}/best.ckpt" ]]; then
       ckpt="${run_dir}/best.ckpt"
+    elif [[ -f "${run_dir}/last.ckpt" ]]; then
+      ckpt="${run_dir}/last.ckpt"
     else
       continue
     fi
@@ -309,7 +315,7 @@ find_matching_runs() {
     mapfile -t info < <(describe_run_dir "${run_dir}" "${branch}" "${dataset}")
     [[ ${#info[@]} -eq 5 ]] || continue
     add_run "${info[1]}" "${info[2]}" "${info[0]}" "${info[3]}" "${info[4]}"
-  done < <(find "${RESULTS_DIR}" -name 'last.ckpt' 2>/dev/null | sort)
+  done < <(find "${RESULTS_DIR}" \( -name 'best.ckpt' -o -name 'last.ckpt' \) 2>/dev/null | sort -u)
 
   if [[ ${#RUN_LABELS[@]} -eq 0 ]]; then
     echo "[branch.sh] 未找到任何 checkpoint。" >&2

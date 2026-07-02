@@ -52,6 +52,7 @@ bash scripts/branch.sh
 |----|---------|------|
 | `baseline` | `a5cb7a9` | main / TopoEncoder |
 | `scheme-a-v1` | `4228e4d` | Scheme A 经验版归档 |
+| `scheme-a2-wip` | `bb14b54` | Scheme A2 带符号 ∂₂、不平均 |
 | `scheme-b-wip` | `265da2b` | Scheme B 进行中 |
 
 新增模型：编辑 `model_registry.tsv`，在 main 提交；scheme 分支通过 `merge main` 同步。

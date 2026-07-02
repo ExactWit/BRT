@@ -480,6 +480,34 @@ pick_test_sample() {
   SAMPLE_STEM="$(echo "${picked}" | awk -F '\t' '{print $2}')"
 }
 
+parse_run_dir_layout() {
+  local run_dir="$1"
+  mapfile -t PARSED_RUN_LAYOUT < <(python3 - "${run_dir}" "${RESULTS_DIR}" <<'PY'
+import pathlib, sys
+
+run_dir = pathlib.Path(sys.argv[1]).resolve()
+results_dir = pathlib.Path(sys.argv[2]).resolve()
+rel = run_dir.relative_to(results_dir)
+parts = rel.parts
+if len(parts) < 3:
+    raise SystemExit(f"unexpected run dir layout: {run_dir}")
+print(parts[0])
+print(parts[1])
+print(parts[2])
+PY
+  )
+  RUN_EXPERIMENT_NAME="${PARSED_RUN_LAYOUT[0]}"
+  RUN_LOG_NAME="${PARSED_RUN_LAYOUT[1]}"
+  RUN_LOG_VERSION="${PARSED_RUN_LAYOUT[2]}"
+}
+
+backup_run_dir() {
+  local run_dir="$1"
+  local backup_dir="${run_dir}.backup_$(date +%Y%m%d_%H%M%S)"
+  echo "[branch.sh] 备份 run 目录 -> ${backup_dir}" >&2
+  cp -a "${run_dir}" "${backup_dir}"
+}
+
 run_train() {
   local branch="$1"
   ensure_dataset_ready
@@ -546,6 +574,73 @@ run_train() {
   python segmentation.py train \
     "${train_args[@]}" \
     2>&1 | tee "logs/train_${branch_tag}_${DATASET_ID}_$(date +%m%d_%H%M%S).log"
+}
+
+run_resume() {
+  local branch="$1"
+  pick_run "${branch}" "${DATASET_ID}"
+  ensure_dataset_ready
+  parse_run_dir_layout "${SELECTED_RUN_DIR}"
+
+  local resume_ckpt branch_tag batch_size num_workers gpu max_epochs
+  resume_ckpt="${RESUME_CKPT:-${SELECTED_RUN_DIR}/last.ckpt}"
+  if [[ ! -f "${resume_ckpt}" ]]; then
+    if [[ -f "${SELECTED_RUN_DIR}/best.ckpt" ]]; then
+      resume_ckpt="${SELECTED_RUN_DIR}/best.ckpt"
+      echo "[branch.sh] 未找到 last.ckpt，使用 best.ckpt" >&2
+    else
+      echo "[branch.sh] ERROR: 未找到可续训 checkpoint: ${SELECTED_RUN_DIR}" >&2
+      exit 1
+    fi
+  fi
+
+  if [[ "${SKIP_RUN_BACKUP:-0}" != "1" ]]; then
+    backup_run_dir "${SELECTED_RUN_DIR}"
+  else
+    echo "[branch.sh] SKIP_RUN_BACKUP=1，跳过 run 目录备份" >&2
+  fi
+
+  branch_tag="$(sanitize_name "${branch}")"
+  batch_size="${BATCH_SIZE:-16}"
+  num_workers="${NUM_WORKERS:-4}"
+  gpu="${GPU:-0}"
+  max_epochs="${MAX_EPOCHS:-1000}"
+
+  local train_args=(
+    --num_classes "${NUM_CLASSES}"
+    --dataset_dir "${DATASET_DIR}"
+    --batch_size "${batch_size}"
+    --num_workers "${num_workers}"
+    --gpu "${gpu}"
+    --num_control_pts "${NUM_CONTROL_PTS}"
+    --experiment_name "${RUN_EXPERIMENT_NAME}"
+    --log_name "${RUN_LOG_NAME}"
+    --run_tag "${RUN_LOG_VERSION}"
+    --max_epochs "${max_epochs}"
+    --git_branch "${branch}"
+    --dataset_id "${DATASET_ID}"
+    --resume_from "${resume_ckpt}"
+  )
+  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
+    train_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
+  fi
+  if [[ -n "${EXPERIMENT_NOTE:-}" ]]; then
+    train_args+=(--experiment_note "${EXPERIMENT_NOTE}")
+  fi
+
+  echo "[branch.sh] resume"
+  echo "  branch       : ${branch}"
+  echo "  dataset      : ${DATASET_ID}"
+  echo "  dataset_dir  : ${DATASET_DIR}"
+  echo "  run_dir      : ${SELECTED_RUN_DIR}"
+  echo "  resume_from  : ${resume_ckpt}"
+  echo "  max_epochs   : ${max_epochs}"
+  echo "  tensorboard  : results/${RUN_EXPERIMENT_NAME}/${RUN_LOG_NAME}/${RUN_LOG_VERSION}"
+
+  mkdir -p logs
+  python segmentation.py train \
+    "${train_args[@]}" \
+    2>&1 | tee -a "logs/resume_${branch_tag}_${DATASET_ID}_${RUN_LOG_NAME}_${RUN_LOG_VERSION}_$(date +%m%d_%H%M%S).log"
 }
 
 run_test() {
@@ -645,9 +740,10 @@ main() {
   pick_from_list dataset "选择数据集:" "360" "mechcad"
   configure_dataset "${dataset}"
 
-  pick_from_list mode "选择操作:" "train" "test" "viz"
+  pick_from_list mode "选择操作:" "train" "resume" "test" "viz"
   case "${mode}" in
     train) run_train "${branch}" ;;
+    resume) run_resume "${branch}" ;;
     test) run_test "${branch}" ;;
     viz) run_viz "${branch}" ;;
   esac

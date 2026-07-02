@@ -148,7 +148,7 @@ bash scripts/branch.sh
 
 ### 断点续训（resume）
 
-自 infra 锚点 `RESUME_TRAIN` 起，`branch.sh` 提供 **resume** 管线（等价于原 `scripts/resume_train_360.sh` 的交互版）：
+自 infra 锚点 `463d4b8` 起，`branch.sh` 提供 **resume** 管线（等价于原 `scripts/resume_train_360.sh` 的交互版）：
 
 1. 按 branch + dataset 选择已有 **run**（与 test/viz 相同列表）
 2. 自动解析 `results/<dataset>/<date>/<tag>/` 路径，使用 **`last.ckpt`** 续训（无则 fallback `best.ckpt`）
@@ -195,7 +195,7 @@ results/<dataset>/<date>/<tag>/
 | `TEST_PER_SAMPLE` | `8fcd876` | test 写 per-sample iou/acc；viz 按 iou 升序列表 |
 | `VIZ_COMPARE_GAP` | `6ede060` | GT/Pred 间距改为相对 X 宽度比例（默认 0.5） |
 | `VIZ_INDEX_LOOKUP` | `4803b52` | viz 支持固有索引直达，回车进 iou 榜 |
-| `RESUME_TRAIN` | `RESUME_TRAIN` | branch.sh resume 断点续训管线 |
+| `RESUME_TRAIN` | `463d4b8` | branch.sh resume 断点续训管线 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。

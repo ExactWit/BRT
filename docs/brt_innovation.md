@@ -34,12 +34,36 @@ git checkout -b scheme-c-coedge-mp
 bash scripts/branch.sh
 ```
 
+### 模型注册表（pinned commit）
+
+自 infra 锚点 `MODEL_REGISTRY` 起，`branch.sh` 第一步改为**选择模型**（非裸 git 分支），每项对应 `scripts/model_registry.tsv` 中的一行：
+
+| 字段 | 含义 |
+|------|------|
+| `id` | 模型 ID（写入 `experiment_metadata.model.id`） |
+| `git_ref` | 固定提交（checkout 到此 hash 再 train/test/viz） |
+| `branch` | 所属开发分支 |
+| `run_tag` | results 路径 tag（如 `schemea`） |
+| `status` | `active` / `archived` / `wip` |
+
+当前登记：
+
+| id | git_ref | 说明 |
+|----|---------|------|
+| `baseline` | `a5cb7a9` | main / TopoEncoder |
+| `scheme-a-v1` | `4228e4d` | Scheme A 经验版归档 |
+| `scheme-b-wip` | `265da2b` | Scheme B 进行中 |
+
+新增模型：编辑 `model_registry.tsv`，在 main 提交；scheme 分支通过 `merge main` 同步。
+
+`test` / `resume` / `viz` 选 run 时优先匹配 `experiment_metadata.model.id`；旧 run 无 `model` 字段时 fallback 到 `git.branch`。
+
 ## Branch 规划
 
 | Branch | 方案 | 状态 |
 |--------|------|------|
 | `main` | baseline + 本文档 | base |
-| `scheme-a-boundary-mp` | A. 边界算子消息传递 | forward/backward 已通过 |
+| `scheme-a-boundary-mp` | A. 边界算子消息传递 | **v1 已归档** @ `4228e4d`（iou 78.2）；见 `docs/schemes/scheme-a-v1-archive.md` |
 | `scheme-b-hodge-block` | B. Hodge 分解块 | 待做 |
 | `scheme-c-coedge-mp` | C. Coedge 双流形传播 | 待做 |
 | `scheme-d-barycentric-face` | D. 重心感知 FaceEncoder | 待做 |
@@ -63,6 +87,8 @@ bash scripts/branch.sh
 **改动文件：** `models/boundary_topo_encoder.py`（新）、`models/brt.py`（切换 topo 层）
 
 **验证：** `tests/test_scheme_a_forward.py` — forward + backward + 梯度非零（已通过）
+
+**v1 归档（2026-06）：** Fusion360 seg test iou **74.5→78.2**，acc **93.6→94.5**。实现与理论 $\partial_2$ 有偏差（无符号、求平均、含 adj_face 聚合）；详见 [`docs/schemes/scheme-a-v1-archive.md`](schemes/scheme-a-v1-archive.md)。复现 ref：`scheme-a-v1` @ `4228e4d`。
 
 **实现：** `models/boundary_topo_encoder.py` 中 `BoundaryOperatorTopoEncoder`，`models/brt.py` 已切换 topo 层。
 
@@ -199,6 +225,7 @@ results/<dataset>/<date>/<tag>/
 | `VIZ_INDEX_LOOKUP` | `4803b52` | viz 支持固有索引直达，回车进 iou 榜 |
 | `RESUME_TRAIN` | `463d4b8` | branch.sh resume 断点续训管线 |
 | `BEST_CKPT_TEST` | `86da2fc` | test/viz 用 best.ckpt；记录 best epoch 到 metadata |
+| `MODEL_REGISTRY` | `MODEL_REGISTRY` | branch.sh 模型注册表 + pinned commit 选择 |
 | （旧） | `82f4ba0` | branch.sh、metadata、viz 初版 |
 
 新建 scheme 分支请从 **`RESULTS_LAYOUT_V2` 所在 main 提交** 分出。
@@ -252,6 +279,14 @@ results/<dataset>/<date>/<tag>/
     "resume_from": null
   },
   "note": "用户备注（branch.sh train 时会提示输入）",
+  "model": {
+    "id": "scheme-a-v1",
+    "label": "Scheme A v1 — empirical Boundary MP (archived)",
+    "commit": "4228e4d",
+    "commit_full": "...",
+    "branch": "scheme-a-boundary-mp",
+    "status": "archived"
+  },
   "checkpoints": {
     "monitor": "val_iou",
     "mode": "max",

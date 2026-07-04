@@ -31,6 +31,7 @@ import triangles3
 from solid_to_brt import build_data as build_BRT, build_data_no_label as build_BRT_no_label
 import uuid
 from numpy.linalg import norm
+from mechcad_failure import append_failure_record, make_failure_record
 
 
 def rotation_matrix_to_z_axis(v):
@@ -686,6 +687,13 @@ def main(cmd=None):
         help="Append timed-out or failed STEP paths to this TSV log",
     )
 
+    arg_parser.add_argument(
+        "--failure_log",
+        type=str,
+        default=None,
+        help="Append structured JSONL failure records (stage, face_index, occwl/OCC layer)",
+    )
+
     arguments = arg_parser.parse_args(cmd)
 
     if arguments.method==8:
@@ -708,6 +716,8 @@ def main(cmd=None):
         print(f"file timeout: {arguments.file_timeout}s")
     if arguments.skip_log:
         print(f"skip log: {arguments.skip_log}")
+    if arguments.failure_log:
+        print(f"failure log: {arguments.failure_log}")
 
     process(arguments)
 
@@ -725,7 +735,22 @@ def build_triangles(solid, save_path, filename, **kwargs):
         logging.info(f"{save_path/target} already exists")
         return False
 
-    graph = face_adjacency(solid)
+    step_path = kwargs.get("_step_path")
+    failure_log = kwargs.get("_failure_log")
+
+    try:
+        graph = face_adjacency(solid)
+    except Exception as exc:
+        if failure_log and step_path is not None:
+            append_failure_record(
+                failure_log,
+                make_failure_record(
+                    step_path=pathlib.Path(step_path),
+                    stage="face_adjacency",
+                    exc=exc,
+                ),
+            )
+        raise
 
     nodes_lst = []
     in_mask_lst = []
@@ -738,10 +763,23 @@ def build_triangles(solid, save_path, filename, **kwargs):
     fn = kwargs["sub_fn"]
 
     for face_idx in graph.nodes:
-        # Get the B-rep face
         face = graph.nodes[face_idx]["face"]
-
-        nodes, in_mask, tri_normals, points, normals, vis_mask, uv_values, scale = fn(face, normalize=False, **kwargs)
+        try:
+            nodes, in_mask, tri_normals, points, normals, vis_mask, uv_values, scale = fn(
+                face, normalize=False, **kwargs
+            )
+        except Exception as exc:
+            if failure_log and step_path is not None:
+                append_failure_record(
+                    failure_log,
+                    make_failure_record(
+                        step_path=pathlib.Path(step_path),
+                        stage="face_triangulation",
+                        exc=exc,
+                        face_index=int(face_idx),
+                    ),
+                )
+            raise
 
         nodes_lst.append(nodes)
         in_mask_lst.append(in_mask)
@@ -752,11 +790,23 @@ def build_triangles(solid, save_path, filename, **kwargs):
         vis_mask_lst.append(vis_mask)
         tri_normals_list.append(tri_normals)
 
-    points_lst = torch.stack(points_lst)
-    uv_values_lst = torch.stack(uv_values_lst)
-    normals_lst = torch.stack(normals_lst)
-    scale_lst = torch.stack(scale_lst)
-    vis_mask_lst = torch.stack(vis_mask_lst)
+    try:
+        points_lst = torch.stack(points_lst)
+        uv_values_lst = torch.stack(uv_values_lst)
+        normals_lst = torch.stack(normals_lst)
+        scale_lst = torch.stack(scale_lst)
+        vis_mask_lst = torch.stack(vis_mask_lst)
+    except Exception as exc:
+        if failure_log and step_path is not None:
+            append_failure_record(
+                failure_log,
+                make_failure_record(
+                    step_path=pathlib.Path(step_path),
+                    stage="save",
+                    exc=exc,
+                ),
+            )
+        raise
 
     torch.save(
         {
@@ -823,21 +873,39 @@ def process_one_file(arguments):
             compound, shape_att = Compound.load_step_with_attributes(fn)
             args.shape_att = shape_att
 
-    except Exception:
+    except Exception as exc:
+        if getattr(args, "failure_log", None):
+            append_failure_record(
+                args.failure_log,
+                make_failure_record(step_path=fn, stage="load_step", exc=exc),
+            )
         logging.exception(f"Read Step Error in {fn}")
         return False
 
     graph = False
+    build_kwargs = {**vars(args), "_step_path": fn, "_failure_log": getattr(args, "failure_log", None)}
+    solid_index = 0
     try:
         for idx, solid in enumerate(compound.solids()):
+            solid_index = idx
             build_fn = args.build_fn
-            graph = build_fn(solid, output_path, fn_stem, **vars(args))
+            graph = build_fn(solid, output_path, fn_stem, **build_kwargs)
             break
 
-    except ValueError:
+    except ValueError as exc:
+        if getattr(args, "failure_log", None):
+            append_failure_record(
+                args.failure_log,
+                make_failure_record(
+                    step_path=fn,
+                    stage="face_triangulation",
+                    exc=exc,
+                    solid_index=solid_index,
+                ),
+            )
         logging.exception(f"Found Value Error in {fn.stem}")
         return False
-    except Exception:
+    except Exception as exc:
         logging.exception(f"Build Error in {fn.stem}")
         return False
 

@@ -61,6 +61,8 @@ def run_category(
     source_root: Path,
     *,
     process_num: int,
+    file_timeout: int,
+    skip_log: Path,
     failure_log: Path,
     list_dir: Path,
 ) -> int:
@@ -82,13 +84,15 @@ def run_category(
         "8",
         "--no_label",
         "--file_timeout",
-        "0",
+        str(file_timeout),
         "--list",
         str(list_path),
+        "--skip_log",
+        str(skip_log),
         "--failure_log",
         str(failure_log),
     ]
-    print(f"[retry] {category}: {len(paths)} files -> {output_dir}")
+    print(f"[retry] {category}: {len(paths)} files (timeout={file_timeout}s) -> {output_dir}")
     solid_main(cmd)
     new_bins = sum(1 for p in paths if (output_dir / f"{p.stem}.bin").exists())
     return new_bins
@@ -119,6 +123,12 @@ def main() -> None:
         help="Default: <processed-dir>/triangles_failure.jsonl",
     )
     parser.add_argument("--process-num", type=int, default=8)
+    parser.add_argument(
+        "--file-timeout",
+        type=int,
+        default=900,
+        help="Per-file timeout in seconds (0=disable; not recommended)",
+    )
     parser.add_argument("--categories", type=str, default="")
     parser.add_argument(
         "--manifest-out",
@@ -155,11 +165,13 @@ def main() -> None:
     print(json.dumps(stats, indent=2))
     print(f"categories with work: {sorted(grouped.keys())}")
     print(f"failure_log: {failure_log}")
+    print(f"file_timeout: {args.file_timeout}s")
 
     manifest = {
         "stats": stats,
         "skip_log": str(skip_log),
         "failure_log": str(failure_log),
+        "file_timeout": args.file_timeout,
         "by_category": {cat: len(paths) for cat, paths in sorted(grouped.items())},
     }
 
@@ -173,6 +185,8 @@ def main() -> None:
             triangles_root,
             args.source_root.resolve(),
             process_num=args.process_num,
+            file_timeout=args.file_timeout,
+            skip_log=skip_log,
             failure_log=failure_log,
             list_dir=list_dir,
         )

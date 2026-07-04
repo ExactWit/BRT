@@ -31,7 +31,7 @@ import triangles3
 from solid_to_brt import build_data as build_BRT, build_data_no_label as build_BRT_no_label
 import uuid
 from numpy.linalg import norm
-from mechcad_failure import append_failure_record, make_failure_record
+from mechcad_failure import append_failure_record, make_failure_record, make_timeout_record
 
 
 def rotation_matrix_to_z_axis(v):
@@ -544,6 +544,10 @@ def process_parallel_with_timeout(work_files, args):
                 if elapsed >= timeout:
                     logging.warning("Timeout after %ss: %s", timeout, fn)
                     append_skip_log(skip_log, fn, f"timeout>{timeout}s")
+                    if getattr(args, "failure_log", None):
+                        append_failure_record(
+                            args.failure_log, make_timeout_record(fn, timeout)
+                        )
                     _kill_process(proc)
                     bar.update(1)
                     continue
@@ -576,6 +580,8 @@ def process_sequential_with_timeout(work_files, args):
         if proc.is_alive():
             logging.warning("Timeout after %ss: %s", timeout, fn)
             append_skip_log(skip_log, fn, f"timeout>{timeout}s")
+            if getattr(args, "failure_log", None):
+                append_failure_record(args.failure_log, make_timeout_record(fn, timeout))
             _kill_process(proc)
             continue
         if queue.empty():

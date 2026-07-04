@@ -5,6 +5,7 @@ set -eo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROCESSED_DIR="${PROCESSED_DIR:-/data/hdd/datasets/mechcad/processed}"
 PROCESS_NUM="${PROCESS_NUM:-8}"
+FILE_TIMEOUT="${FILE_TIMEOUT:-900}"
 
 source "${HOME}/software/miniconda3/etc/profile.d/conda.sh"
 conda activate brt
@@ -15,6 +16,7 @@ cd "${REPO_DIR}/process"
 python retry_mechcad_triangles.py \
   --processed-dir "${PROCESSED_DIR}" \
   --process-num "${PROCESS_NUM}" \
+  --file-timeout "${FILE_TIMEOUT}" \
   --run-split \
   2>&1 | tee "${PROCESSED_DIR}/triangles_retry.log"
 

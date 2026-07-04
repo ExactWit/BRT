@@ -104,6 +104,24 @@ def classify_exception(stage: str, exc: BaseException) -> tuple[str, str, str | 
     return "unknown", f"{exc_type}", occ_layer
 
 
+def make_timeout_record(step_path: Path, timeout_sec: int) -> dict[str, Any]:
+    return {
+        "step_path": str(step_path.resolve()),
+        "category": step_path.parent.name,
+        "stem": step_path.stem,
+        "stage": "timeout",
+        "stage_label": "subprocess watchdog",
+        "solid_index": 0,
+        "face_index": None,
+        "exception_type": "TimeoutError",
+        "exception_message": f"processing exceeded {timeout_sec}s",
+        "bucket": "timeout",
+        "detail": f"timeout>{timeout_sec}s",
+        "occ_layer": None,
+        "traceback": "",
+    }
+
+
 def make_failure_record(
     *,
     step_path: Path,

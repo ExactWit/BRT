@@ -109,7 +109,7 @@ configure_dataset() {
       NUM_CLASSES="${NUM_CLASSES:-10}"
       NUM_CONTROL_PTS="${NUM_CONTROL_PTS:-28}"
       PREPROCESS_SCRIPT="${REPO_DIR}/scripts/preprocess_tri.sh"
-      : "${BATCH_SIZE:=8}"
+      : "${BATCH_SIZE:=4}"
       ;;
     *)
       echo "[branch.sh] ERROR: unknown dataset $1"

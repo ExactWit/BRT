@@ -109,6 +109,7 @@ configure_dataset() {
       NUM_CLASSES="${NUM_CLASSES:-10}"
       NUM_CONTROL_PTS="${NUM_CONTROL_PTS:-28}"
       PREPROCESS_SCRIPT="${REPO_DIR}/scripts/preprocess_tri.sh"
+      : "${BATCH_SIZE:=8}"
       ;;
     *)
       echo "[branch.sh] ERROR: unknown dataset $1"
@@ -594,6 +595,7 @@ run_train() {
   echo "  model           : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT} (${SELECTED_MODEL_STATUS})"
   echo "  branch          : ${SELECTED_MODEL_BRANCH}"
   echo "  dataset         : ${DATASET_ID}"
+  echo "  batch_size      : ${batch_size}"
   echo "  dataset_dir     : ${DATASET_DIR}"
   echo "  results_path    : results/${experiment_name}/${log_date}/${run_tag}"
   if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then

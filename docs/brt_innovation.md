@@ -50,7 +50,7 @@ bash scripts/branch.sh
 
 | id | git_ref | 说明 |
 |----|---------|------|
-| `baseline` | `a5cb7a9` | main / TopoEncoder |
+| `baseline` | `ad21473` | main / TopoEncoder + mechcad datasplit 支持 |
 | `scheme-a-v1` | `4228e4d` | Scheme A 经验版归档 |
 | `scheme-a2-wip` | `bb14b54` | Scheme A2 带符号 ∂₂、不平均 |
 | `scheme-b-wip` | `265da2b` | Scheme B 进行中 |

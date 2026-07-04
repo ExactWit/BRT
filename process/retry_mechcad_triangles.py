@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import subprocess
 import sys
 from collections import Counter
@@ -141,6 +142,12 @@ def main() -> None:
         action="store_true",
         help="Regenerate datasplit.json after retry",
     )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=None,
+        help="Optional anchored retry log (default: <processed-dir>/triangles_retry.log via shell tee)",
+    )
     args = parser.parse_args()
 
     processed = args.processed_dir.resolve()
@@ -149,6 +156,18 @@ def main() -> None:
     triangles_root = processed / "triangles"
     list_dir = processed / "retry_lists"
     categories = [c.strip() for c in args.categories.split(",") if c.strip()] or None
+
+    from log_context import SampleContextFilter, setup_mechcad_logging
+
+    setup_mechcad_logging()
+    if args.log_file:
+        args.log_file.parent.mkdir(parents=True, exist_ok=True)
+        file_handler = logging.FileHandler(args.log_file, mode="a", encoding="utf-8")
+        file_handler.addFilter(SampleContextFilter())
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s:%(name)s:[%(sample)s] %(message)s")
+        )
+        logging.getLogger().addHandler(file_handler)
 
     if failure_log.exists():
         failure_log.unlink()

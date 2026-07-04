@@ -32,6 +32,7 @@ from solid_to_brt import build_data as build_BRT, build_data_no_label as build_B
 import uuid
 from numpy.linalg import norm
 from mechcad_failure import append_failure_record, make_failure_record, make_timeout_record
+from log_context import current_anchor, set_face_context, set_sample_context, setup_mechcad_logging
 
 
 def rotation_matrix_to_z_axis(v):
@@ -482,11 +483,16 @@ def append_skip_log(skip_log, fn, reason):
 
 def _subprocess_entry(fn_str, args, queue):
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+    setup_mechcad_logging()
+    fn = pathlib.Path(fn_str)
+    set_sample_context(fn)
     try:
-        ok = process_one_file((pathlib.Path(fn_str), args))
+        ok = process_one_file((fn, args))
         queue.put(("ok", bool(ok)))
     except Exception as exc:
         queue.put(("err", repr(exc)))
+    finally:
+        set_sample_context(None)
 
 
 def _kill_process(proc):
@@ -537,12 +543,12 @@ def process_parallel_with_timeout(work_files, args):
                             ok_count += 1
                         elif status == "err":
                             append_skip_log(skip_log, fn, detail)
-                            logging.warning("Failed %s: %s", fn, detail)
+                            logging.warning("[%s] Failed: %s", current_anchor(), detail)
                     bar.update(1)
                     continue
 
                 if elapsed >= timeout:
-                    logging.warning("Timeout after %ss: %s", timeout, fn)
+                    logging.warning("Timeout after %ss", timeout)
                     append_skip_log(skip_log, fn, f"timeout>{timeout}s")
                     if getattr(args, "failure_log", None):
                         append_failure_record(
@@ -578,7 +584,7 @@ def process_sequential_with_timeout(work_files, args):
         proc.start()
         proc.join(timeout)
         if proc.is_alive():
-            logging.warning("Timeout after %ss: %s", timeout, fn)
+            logging.warning("Timeout after %ss", timeout)
             append_skip_log(skip_log, fn, f"timeout>{timeout}s")
             if getattr(args, "failure_log", None):
                 append_failure_record(args.failure_log, make_timeout_record(fn, timeout))
@@ -592,7 +598,7 @@ def process_sequential_with_timeout(work_files, args):
             ok_count += 1
         elif status == "err":
             append_skip_log(skip_log, fn, detail)
-            logging.warning("Failed %s: %s", fn, detail)
+            logging.warning("[%s] Failed: %s", current_anchor(), detail)
 
     print(f"Processed {ok_count} files.")
 
@@ -625,10 +631,15 @@ def process(args):
     process_func = process_one_file
 
     if args.num_processes == 1:
+        setup_mechcad_logging()
         ok_count = 0
         for fn in tqdm(work_files):
-            if process_func((fn, args)):
-                ok_count += 1
+            set_sample_context(fn)
+            try:
+                if process_func((fn, args)):
+                    ok_count += 1
+            finally:
+                set_sample_context(None)
         print(f"Processed {ok_count} files.")
     else:
         pool = Pool(
@@ -725,6 +736,8 @@ def main(cmd=None):
     if arguments.failure_log:
         print(f"failure log: {arguments.failure_log}")
 
+    setup_mechcad_logging()
+
     process(arguments)
 
 
@@ -770,6 +783,7 @@ def build_triangles(solid, save_path, filename, **kwargs):
 
     for face_idx in graph.nodes:
         face = graph.nodes[face_idx]["face"]
+        set_face_context(int(face_idx))
         try:
             nodes, in_mask, tri_normals, points, normals, vis_mask, uv_values, scale = fn(
                 face, normalize=False, **kwargs
@@ -786,6 +800,8 @@ def build_triangles(solid, save_path, filename, **kwargs):
                     ),
                 )
             raise
+        finally:
+            set_face_context(None)
 
         nodes_lst.append(nodes)
         in_mask_lst.append(in_mask)
@@ -861,6 +877,7 @@ def build_brt_data_no_label(solid, save_path, filename, **kwargs):
 
 def process_one_file(arguments):
     fn, args = arguments
+    set_sample_context(fn)
 
     fn_stem = fn.stem
     if not os.path.exists(args.output):
@@ -885,7 +902,7 @@ def process_one_file(arguments):
                 args.failure_log,
                 make_failure_record(step_path=fn, stage="load_step", exc=exc),
             )
-        logging.exception(f"Read Step Error in {fn}")
+        logging.exception("[%s] Read Step Error", current_anchor())
         return False
 
     graph = False
@@ -909,10 +926,10 @@ def process_one_file(arguments):
                     solid_index=solid_index,
                 ),
             )
-        logging.exception(f"Found Value Error in {fn.stem}")
+        logging.exception("[%s] Found Value Error", current_anchor())
         return False
     except Exception as exc:
-        logging.exception(f"Build Error in {fn.stem}")
+        logging.exception("[%s] Build Error", current_anchor())
         return False
 
     return graph

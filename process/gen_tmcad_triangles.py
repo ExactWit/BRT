@@ -4,16 +4,22 @@ import os.path
 import pathlib
 
 from solid_to_triangles2 import MECHCAD_CATEGORIES, process_main
+from log_context import SampleContextFilter, setup_mechcad_logging
 
 if not os.path.exists("logs"):
     os.makedirs("logs", exist_ok=True)
 
+setup_mechcad_logging()
+
 logging.basicConfig(
     filename="logs/solid_to_triangles",
     filemode="w",
-    format=" %(asctime)s :: %(levelname)-8s :: %(message)s",
+    format=" %(asctime)s :: %(levelname)-8s :: [%(sample)s] %(message)s",
     level=logging.INFO,
 )
+for _handler in logging.getLogger().handlers:
+    if isinstance(_handler, logging.FileHandler):
+        _handler.addFilter(SampleContextFilter())
 
 parser = argparse.ArgumentParser("Convert each face of solid models into triangular beziers")
 parser.add_argument("data_path", type=str)

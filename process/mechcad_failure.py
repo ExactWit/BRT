@@ -106,6 +106,7 @@ def classify_exception(stage: str, exc: BaseException) -> tuple[str, str, str | 
 
 def make_timeout_record(step_path: Path, timeout_sec: int) -> dict[str, Any]:
     return {
+        "anchor": f"{step_path.parent.name}/{step_path.stem}",
         "step_path": str(step_path.resolve()),
         "category": step_path.parent.name,
         "stem": step_path.stem,
@@ -131,7 +132,11 @@ def make_failure_record(
     solid_index: int = 0,
 ) -> dict[str, Any]:
     bucket, detail, occ_layer = classify_exception(stage, exc)
+    anchor = f"{step_path.parent.name}/{step_path.stem}"
+    if face_index is not None:
+        anchor = f"{anchor}:face{face_index}"
     return {
+        "anchor": anchor,
         "step_path": str(step_path.resolve()),
         "category": step_path.parent.name,
         "stem": step_path.stem,

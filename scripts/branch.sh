@@ -106,7 +106,7 @@ configure_dataset() {
       RESULTS_DATASET_NAME="mechcad_seg"
       SPLIT_SOURCE_JSON="${SPLIT_SOURCE_JSON:-}"
       STEP_ROOT="${STEP_ROOT:-/data/hdd/datasets/mechcad/mechcad}"
-      NUM_CLASSES="${NUM_CLASSES:-25}"
+      NUM_CLASSES="${NUM_CLASSES:-10}"
       NUM_CONTROL_PTS="${NUM_CONTROL_PTS:-28}"
       PREPROCESS_SCRIPT="${REPO_DIR}/scripts/preprocess_tri.sh"
       ;;
@@ -361,14 +361,20 @@ pick_run() {
   exit 1
 }
 
+segmentation_supports_model_metadata() {
+  grep -q -- '--model_id' "${REPO_DIR}/segmentation.py" 2>/dev/null
+}
+
 append_model_metadata_args() {
   local -n _args=$1
-  if [[ -n "${SELECTED_MODEL_ID:-}" ]]; then
+  if [[ -n "${SELECTED_MODEL_ID:-}" ]] && segmentation_supports_model_metadata; then
     _args+=(--model_id "${SELECTED_MODEL_ID}")
     _args+=(--model_label "${SELECTED_MODEL_LABEL}")
     _args+=(--model_commit "${SELECTED_MODEL_COMMIT}")
     _args+=(--model_commit_full "${SELECTED_MODEL_COMMIT_FULL}")
     _args+=(--model_status "${SELECTED_MODEL_STATUS}")
+  elif [[ -n "${SELECTED_MODEL_ID:-}" ]]; then
+    echo "[branch.sh] 注意: 当前 checkout 的 segmentation.py 不支持 model metadata CLI，已跳过 --model_id 等参数。" >&2
   fi
 }
 

@@ -20,9 +20,7 @@ mkdir -p logs "${OUTPUT_DIR}"
 python gen_tmcad_triangles.py "${DATASET_DIR}/mechcad/" "${OUTPUT_DIR}" \
   2>&1 | tee "${OUTPUT_DIR}/triangles.log"
 
-# split dataset（路径需指向含类别子目录的实际输出层）
-python split_dataset.py \
-  "${OUTPUT_DIR}/triangles/triangles" \
-  "${OUTPUT_DIR}/topology/brt" \
-  "${OUTPUT_DIR}/datasplit.json" \
+# split dataset（路径：triangles/<category> 与 topology/brt/<category> 成对样本）
+python split_mechcad_available.py \
+  --processed-dir "${OUTPUT_DIR}" \
   2>&1 | tee "${OUTPUT_DIR}/datasplit.log"

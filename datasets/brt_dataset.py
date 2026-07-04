@@ -403,8 +403,10 @@ class BRTDataset_seg_online(BRTDataset):
             if len(label.shape)==0:
                 label=np.array([label])
             label=torch.from_numpy(label).long()
+        elif "label" in solid:
+            label = solid["label"]
         else:
-            label=solid['label']
+            label = None
 
         edge_index=solid['edge_index']
         wire_index=solid['wire_index']
@@ -511,6 +513,10 @@ class BRTDataset_seg_online(BRTDataset):
 
         data.update(face)
         data.update(topo)
+
+        if data.get("label") is None:
+            n_faces = len(data["face"])
+            data["label"] = torch.full((n_faces,), int(item["label"]), dtype=torch.long)
 
         data['filename']=item['face']
 

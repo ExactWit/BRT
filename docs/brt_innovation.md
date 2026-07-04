@@ -332,7 +332,7 @@ results/<dataset>/<date>/<tag>/
 | dataset | results 桶 | processed | STEP 根目录 | num_classes |
 |---------|------------|-----------|-------------|-------------|
 | `360` | `fusion360_seg` | `/data/hdd/datasets/s2.0.0/processed/brt` | `.../breps/step` | 8 |
-| `mechcad` | `mechcad_seg` | `/data/hdd/datasets/mechcad/processed` | `.../mechcad` | 25 |
+| `mechcad` | `mechcad_seg` | `/data/hdd/datasets/mechcad/processed` | `.../mechcad` | 10 |
 
 ### viz 输出
 

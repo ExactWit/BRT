@@ -2,8 +2,11 @@ import argparse
 import logging
 import os
 import pathlib
-from multiprocessing.pool import Pool
+import time
+from collections import deque
 from itertools import repeat
+from multiprocessing import Process, Queue, get_context
+from multiprocessing.pool import Pool
 import signal
 import torch
 import numpy as np
@@ -467,6 +470,126 @@ def initializer():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
+def append_skip_log(skip_log, fn, reason):
+    if not skip_log:
+        return
+    path = pathlib.Path(skip_log)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{pathlib.Path(fn).resolve()}\t{reason}\n")
+
+
+def _subprocess_entry(fn_str, args, queue):
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    try:
+        ok = process_one_file((pathlib.Path(fn_str), args))
+        queue.put(("ok", bool(ok)))
+    except Exception as exc:
+        queue.put(("err", repr(exc)))
+
+
+def _kill_process(proc):
+    proc.terminate()
+    proc.join(5)
+    if proc.is_alive():
+        proc.kill()
+        proc.join()
+
+
+def process_parallel_with_timeout(work_files, args):
+    ctx = get_context("fork")
+    pending = deque(work_files)
+    active = []
+    ok_count = 0
+    timeout = args.file_timeout
+    skip_log = args.skip_log
+
+    with tqdm(total=len(work_files)) as bar:
+        while pending or active:
+            while pending and len(active) < args.num_processes:
+                fn = pending.popleft()
+                if (pathlib.Path(args.output) / f"{fn.stem}.bin").exists():
+                    bar.update(1)
+                    continue
+                queue = ctx.Queue()
+                proc = ctx.Process(
+                    target=_subprocess_entry,
+                    args=(str(fn), args, queue),
+                    daemon=True,
+                )
+                proc.start()
+                active.append(
+                    {"proc": proc, "fn": fn, "queue": queue, "start": time.monotonic()}
+                )
+
+            still_active = []
+            for job in active:
+                proc = job["proc"]
+                fn = job["fn"]
+                elapsed = time.monotonic() - job["start"]
+
+                if not proc.is_alive():
+                    proc.join()
+                    if not job["queue"].empty():
+                        status, detail = job["queue"].get()
+                        if status == "ok" and detail:
+                            ok_count += 1
+                        elif status == "err":
+                            append_skip_log(skip_log, fn, detail)
+                            logging.warning("Failed %s: %s", fn, detail)
+                    bar.update(1)
+                    continue
+
+                if elapsed >= timeout:
+                    logging.warning("Timeout after %ss: %s", timeout, fn)
+                    append_skip_log(skip_log, fn, f"timeout>{timeout}s")
+                    _kill_process(proc)
+                    bar.update(1)
+                    continue
+
+                still_active.append(job)
+            active = still_active
+            if pending or active:
+                time.sleep(0.2)
+
+    print(f"Processed {ok_count} files.")
+
+
+def process_sequential_with_timeout(work_files, args):
+    ctx = get_context("fork")
+    ok_count = 0
+    timeout = args.file_timeout
+    skip_log = args.skip_log
+
+    for fn in tqdm(work_files):
+        if (pathlib.Path(args.output) / f"{fn.stem}.bin").exists():
+            continue
+        queue = ctx.Queue()
+        proc = ctx.Process(
+            target=_subprocess_entry,
+            args=(str(fn), args, queue),
+            daemon=True,
+        )
+        proc.start()
+        proc.join(timeout)
+        if proc.is_alive():
+            logging.warning("Timeout after %ss: %s", timeout, fn)
+            append_skip_log(skip_log, fn, f"timeout>{timeout}s")
+            _kill_process(proc)
+            continue
+        if queue.empty():
+            append_skip_log(skip_log, fn, "no_result")
+            continue
+        status, detail = queue.get()
+        if status == "ok" and detail:
+            ok_count += 1
+        elif status == "err":
+            append_skip_log(skip_log, fn, detail)
+            logging.warning("Failed %s: %s", fn, detail)
+
+    print(f"Processed {ok_count} files.")
+
+
 def process(args):
     input_path = pathlib.Path(args.input)
     if not input_path.exists():
@@ -485,14 +608,27 @@ def process(args):
     else:
         work_files = list(input_path.rglob("*.st*p"))
 
+    if args.file_timeout and args.file_timeout > 0:
+        if args.num_processes == 1:
+            process_sequential_with_timeout(work_files, args)
+        else:
+            process_parallel_with_timeout(work_files, args)
+        return
+
     process_func = process_one_file
 
     if args.num_processes == 1:
+        ok_count = 0
         for fn in tqdm(work_files):
-
-            process_func((fn, args))
+            if process_func((fn, args)):
+                ok_count += 1
+        print(f"Processed {ok_count} files.")
     else:
-        pool = Pool(processes=args.num_processes, initializer=initializer)
+        pool = Pool(
+            processes=args.num_processes,
+            initializer=initializer,
+            maxtasksperchild=1,
+        )
         try:
             results = list(
                 tqdm(pool.imap_unordered(process_func, zip(work_files, repeat(args))), total=len(work_files))
@@ -536,6 +672,20 @@ def main(cmd=None):
 
     arg_parser.add_argument("--method", type=int, help="method version: 1: old tri,2:new tri,3:uvgrid,4:sample points")
 
+    arg_parser.add_argument(
+        "--file_timeout",
+        type=int,
+        default=900,
+        help="Per-file timeout in seconds (0 disables; uses isolated subprocess + kill on hang)",
+    )
+
+    arg_parser.add_argument(
+        "--skip_log",
+        type=str,
+        default=None,
+        help="Append timed-out or failed STEP paths to this TSV log",
+    )
+
     arguments = arg_parser.parse_args(cmd)
 
     if arguments.method==8:
@@ -554,6 +704,10 @@ def main(cmd=None):
         arguments.sub_fn=convertFaceToRectangleBeziers
 
     print(f"process number: {arguments.num_processes}")
+    if arguments.file_timeout and arguments.file_timeout > 0:
+        print(f"file timeout: {arguments.file_timeout}s")
+    if arguments.skip_log:
+        print(f"skip log: {arguments.skip_log}")
 
     process(arguments)
 
@@ -682,11 +836,55 @@ def process_one_file(arguments):
 
     except ValueError:
         logging.exception(f"Found Value Error in {fn.stem}")
+        return False
     except Exception:
         logging.exception(f"Build Error in {fn.stem}")
         return False
 
     return graph
+
+
+MECHCAD_CATEGORIES = [
+    "shaft",
+    "pulley",
+    "nut",
+    "gear",
+    "bracket",
+    "bearing",
+    "bolt",
+    "coupling",
+    "flange",
+    "screw",
+]
+
+
+def _mechcad_category_cmd(
+    input_path,
+    output_path,
+    category,
+    method,
+    target,
+    process_num,
+    file_timeout,
+    skip_log,
+    no_label=True,
+):
+    cmd = [
+        f"{input_path}/{category}",
+        f"{output_path}/{target}/{category}",
+        "--num_processes",
+        str(process_num),
+        "--no_random_name",
+        "--method",
+        str(method),
+    ]
+    if no_label:
+        cmd.append("--no_label")
+    if file_timeout:
+        cmd.extend(["--file_timeout", str(file_timeout)])
+    if skip_log:
+        cmd.extend(["--skip_log", skip_log])
+    return cmd
 
 
 def doKnotInsertion(spline_surf: Geom_BSplineSurface, num_max_knots=3):
@@ -713,129 +911,34 @@ def doKnotInsertion(spline_surf: Geom_BSplineSurface, num_max_knots=3):
             spline_surf.InsertVKnot(knot, 1, 1e-6)
 
 
-def process_main(input_path, output_path, method=10, dataset="tmcad", target="brt", process_num=30):
+def process_main(
+    input_path,
+    output_path,
+    method=10,
+    dataset="tmcad",
+    target="brt",
+    process_num=30,
+    file_timeout=900,
+    skip_log=None,
+    categories=None,
+):
 
     if dataset == "tmcad":
-        main(
-            [
-                f"{input_path}/screw",
-                f"{output_path}/{target}/screw",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/shaft",
-                f"{output_path}/{target}/shaft",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/pulley",
-                f"{output_path}/{target}/pulley",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/nut",
-                f"{output_path}/{target}/nut",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/gear",
-                f"{output_path}/{target}/gear",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/bracket",
-                f"{output_path}/{target}/bracket",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/bearing",
-                f"{output_path}/{target}/bearing",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/bolt",
-                f"{output_path}/{target}/bolt",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/coupling",
-                f"{output_path}/{target}/coupling",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
-        main(
-            [
-                f"{input_path}/flange",
-                f"{output_path}/{target}/flange",
-                "--num_processes",
-                f"{process_num}",
-                "--no_random_name",
-                "--method",
-                str(method),
-                "--no_label",
-            ]
-        )
+        cats = categories or MECHCAD_CATEGORIES
+        for category in cats:
+            print(f"[mechcad] category={category} target={target}")
+            main(
+                _mechcad_category_cmd(
+                    input_path,
+                    output_path,
+                    category,
+                    method,
+                    target,
+                    process_num,
+                    file_timeout,
+                    skip_log,
+                )
+            )
 
 
 if __name__ == "__main__":

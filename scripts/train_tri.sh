@@ -1,15 +1,12 @@
 #!/bin/bash
+# MechCAD 训练入口 — 推荐用 branch.sh（支持 model registry + seg/cls 任务路由）
 set -eo pipefail
 
-DATASET_DIR=/data/hdd/datasets/mechcad/processed
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${REPO_DIR}"
 
-# conda activate 在脚本中需要先 source
-source "${HOME}/software/miniconda3/etc/profile.d/conda.sh"
-conda activate brt
-
-cd "${HOME}/workspace/repo/BRT"    
-conda activate brt
-# classification
-python classification.py train --num_classes num_of_classes --dataset_dir /path/to/dataset/dir --batch_size 16 --num_workers 4
-# segmentation
-python segmentation.py train --num_classes num_of_classes --dataset_dir /path/to/dataset/dir --batch_size 16 --num_workers 4
+echo "[train_tri.sh] 请使用: bash scripts/branch.sh" >&2
+echo "  360    → seg (segmentation.py)" >&2
+echo "  mechcad → seg (默认) 或 cls (classification.py, WIP)" >&2
+echo "  环境变量: BRT_INFRA_REF=main  BRT_TASK=seg|cls  BATCH_SIZE=4" >&2
+exec bash scripts/branch.sh

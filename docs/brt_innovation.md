@@ -36,7 +36,14 @@ bash scripts/branch.sh
 
 ### 模型注册表（pinned commit）
 
-自 infra 锚点 `MODEL_REGISTRY` 起，`branch.sh` 第一步改为**选择模型**（非裸 git 分支），每项对应 `scripts/model_registry.tsv` 中的一行：
+自 infra 锚点 `MODEL_REGISTRY` 起，`branch.sh` 第一步改为**选择模型**（非裸 git 分支），每项对应 `scripts/model_registry.tsv` 中的一行。
+
+**Registry 指针（不必 `git checkout main`）：** 默认从 `BRT_INFRA_REF=main` 读取 `model_registry.tsv`（`git show main:scripts/...`），随后再 checkout 到所选模型的 **git_ref** 跑 train/test。这样在 detached / scheme 分支上启动 `branch.sh` 也能用到 main 上最新的 registry。
+
+| 环境变量 | 默认 | 含义 |
+|----------|------|------|
+| `BRT_INFRA_REF` | `main` | registry / infra 锚点（只读 tsv，不切换工作区） |
+| `BRT_TASK` | （交互） | mechcad 任务：`seg`（默认）或 `cls`；设后跳过任务菜单 |
 
 | 字段 | 含义 |
 |------|------|
@@ -51,7 +58,7 @@ bash scripts/branch.sh
 | id | git_ref | 说明 |
 |----|---------|------|
 | `baseline` | `ad21473` | main / TopoEncoder + mechcad datasplit 支持 |
-| `scheme-a-v1` | `4228e4d` | Scheme A 经验版归档 |
+| `scheme-a-v1` | `1cf72df` | Scheme A 经验版归档 + mechcad seg label 广播 |
 | `scheme-a2-wip` | `bb14b54` | Scheme A2 带符号 ∂₂、不平均 |
 | `scheme-b-wip` | `265da2b` | Scheme B 进行中 |
 
@@ -162,18 +169,20 @@ $$\mathcal{L}_{\mathrm{bdry}} = \sum_f \Big\| \psi(h_f) - \sum_{e \in \partial f
 
 ## 交互式实验脚本 `scripts/branch.sh`
 
-在 **main** 分支提供的统一入口，自动切换 git 分支、选择数据集并执行 train / resume / test / viz。
+统一入口：读 registry → checkout 模型 pin → 选数据集/任务 → train / resume / test / viz。
 
 ```bash
 cd ~/workspace/repo/BRT
 bash scripts/branch.sh
+# 或：BRT_INFRA_REF=main BRT_TASK=seg bash scripts/branch.sh
 ```
 
 流程：
 
-1. 列出本地 git 分支并 `checkout` 到所选分支
+1. 从 `BRT_INFRA_REF`（默认 `main`）加载 **model registry**，checkout 到所选模型的 **git_ref**
 2. 选择数据集：`360` | `mechcad`
-3. 选择操作：`train` | `resume` | `test` | `viz`
+3. **mechcad 额外选任务**：`seg`（默认，走 `segmentation.py`）| `cls`（原生零件分类，走 `classification.py`，infra WIP）
+4. 选择操作：`train` | `resume` | `test` | `viz`（cls 目前仅 train）
 
 ### 断点续训（resume）
 
@@ -329,10 +338,13 @@ results/<dataset>/<date>/<tag>/
 
 ### 数据集默认路径
 
-| dataset | results 桶 | processed | STEP 根目录 | num_classes |
-|---------|------------|-----------|-------------|-------------|
-| `360` | `fusion360_seg` | `/data/hdd/datasets/s2.0.0/processed/brt` | `.../breps/step` | 8 |
-| `mechcad` | `mechcad_seg` | `/data/hdd/datasets/mechcad/processed` | `.../mechcad` | 10 |
+| dataset | task | results 桶 | entry | processed | num_classes | batch |
+|---------|------|------------|-------|-----------|-------------|-------|
+| `360` | seg | `fusion360_seg` | `segmentation.py` | `.../s2.0.0/processed/brt` | 8 | 16 |
+| `mechcad` | seg | `mechcad_seg` | `segmentation.py` | `.../mechcad/processed` | 10 | 4 |
+| `mechcad` | cls | `mechcad_cls` | `classification.py` | 同上 | 10 | 16 |
+
+**MechCAD seg 说明：** 零件类别 ID 广播到每个面，用 per-face seg 框架做零件分类；**acc 为主指标**，IoU 在标签全相同时与 acc 等价。原生 cls 路径后续补齐 metadata / resume / test。
 
 ### viz 输出
 

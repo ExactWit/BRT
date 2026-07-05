@@ -1,7 +1,32 @@
 # Model registry: pinned git refs for reproducible train/test/viz.
 # Tab-separated table: scripts/model_registry.tsv
+#
+# Registry 默认从 BRT_INFRA_REF 读取（不必 checkout main），模型代码仍 checkout 到
+# registry 行的 git_ref。
 
 MODEL_REGISTRY_FILE="${REPO_DIR}/scripts/model_registry.tsv"
+BRT_INFRA_REF="${BRT_INFRA_REF:-main}"
+
+_registry_tsv_from_git() {
+  local ref="$1"
+  if ! git rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
+    return 1
+  fi
+  git show "${ref}:scripts/model_registry.tsv" 2>/dev/null
+}
+
+_load_registry_rows() {
+  while IFS=$'\t' read -r id label ref branch run_tag status metrics_doc _rest; do
+    [[ -z "${id}" || "${id}" == "id" || "${id:0:1}" == "#" ]] && continue
+    MODEL_IDS+=("${id}")
+    MODEL_LABELS+=("${label} @ ${ref}")
+    MODEL_REFS+=("${ref}")
+    MODEL_BRANCHES+=("${branch}")
+    MODEL_RUN_TAGS+=("${run_tag}")
+    MODEL_STATUSES+=("${status}")
+    MODEL_METRICS_DOCS+=("${metrics_doc}")
+  done
+}
 
 # Populates MODEL_IDS MODEL_LABELS MODEL_REFS MODEL_BRANCHES MODEL_RUN_TAGS MODEL_STATUSES
 load_model_registry() {
@@ -12,22 +37,29 @@ load_model_registry() {
   MODEL_RUN_TAGS=()
   MODEL_STATUSES=()
   MODEL_METRICS_DOCS=()
+  REGISTRY_SOURCE=""
 
-  if [[ ! -f "${MODEL_REGISTRY_FILE}" ]]; then
-    echo "[model_registry] ERROR: missing ${MODEL_REGISTRY_FILE}" >&2
-    exit 1
+  local registry_tsv=""
+  registry_tsv="$(_registry_tsv_from_git "${BRT_INFRA_REF}" || true)"
+  if [[ -n "${registry_tsv}" ]]; then
+    local infra_short
+    infra_short="$(git rev-parse --short "${BRT_INFRA_REF}" 2>/dev/null || echo "${BRT_INFRA_REF}")"
+    echo "[model_registry] registry ← ${BRT_INFRA_REF} (${infra_short})" >&2
+    _load_registry_rows <<< "${registry_tsv}"
+    REGISTRY_SOURCE="${BRT_INFRA_REF}"
+    return 0
   fi
 
-  while IFS=$'\t' read -r id label ref branch run_tag status metrics_doc _rest; do
-    [[ -z "${id}" || "${id}" == "id" || "${id:0:1}" == "#" ]] && continue
-    MODEL_IDS+=("${id}")
-    MODEL_LABELS+=("${label} @ ${ref}")
-    MODEL_REFS+=("${ref}")
-    MODEL_BRANCHES+=("${branch}")
-    MODEL_RUN_TAGS+=("${run_tag}")
-    MODEL_STATUSES+=("${status}")
-    MODEL_METRICS_DOCS+=("${metrics_doc}")
-  done < "${MODEL_REGISTRY_FILE}"
+  if [[ -f "${MODEL_REGISTRY_FILE}" ]]; then
+    echo "[model_registry] registry ← working tree (${MODEL_REGISTRY_FILE})" >&2
+    echo "[model_registry] 提示: 可设 BRT_INFRA_REF=main 始终读 main 上的 registry。" >&2
+    _load_registry_rows < "${MODEL_REGISTRY_FILE}"
+    REGISTRY_SOURCE="working-tree"
+    return 0
+  fi
+
+  echo "[model_registry] ERROR: missing registry (BRT_INFRA_REF=${BRT_INFRA_REF}, file=${MODEL_REGISTRY_FILE})" >&2
+  exit 1
 }
 
 resolve_model_by_label() {

@@ -10,6 +10,8 @@ CONDA_SH="${HOME}/software/miniconda3/etc/profile.d/conda.sh"
 source "${REPO_DIR}/scripts/run_layout.sh"
 # shellcheck source=scripts/model_registry.sh
 source "${REPO_DIR}/scripts/model_registry.sh"
+# shellcheck source=scripts/task_config.sh
+source "${REPO_DIR}/scripts/task_config.sh"
 
 if [[ -f "${CONDA_SH}" ]]; then
   # shellcheck source=/dev/null
@@ -89,33 +91,8 @@ checkout_branch() {
 }
 
 configure_dataset() {
-  case "$1" in
-    360)
-      DATASET_ID="360"
-      DATASET_DIR="${DATASET_DIR:-/data/hdd/datasets/s2.0.0/processed/brt}"
-      RESULTS_DATASET_NAME="fusion360_seg"
-      SPLIT_SOURCE_JSON="${SPLIT_SOURCE_JSON:-/data/hdd/datasets/s2.0.0/processed/dataset.json}"
-      STEP_ROOT="${STEP_ROOT:-/data/hdd/datasets/s2.0.0/breps/step}"
-      NUM_CLASSES="${NUM_CLASSES:-8}"
-      NUM_CONTROL_PTS="${NUM_CONTROL_PTS:-28}"
-      PREPROCESS_SCRIPT="${REPO_DIR}/scripts/preprocess_360.sh"
-      ;;
-    mechcad)
-      DATASET_ID="mechcad"
-      DATASET_DIR="${DATASET_DIR:-/data/hdd/datasets/mechcad/processed}"
-      RESULTS_DATASET_NAME="mechcad_seg"
-      SPLIT_SOURCE_JSON="${SPLIT_SOURCE_JSON:-}"
-      STEP_ROOT="${STEP_ROOT:-/data/hdd/datasets/mechcad/mechcad}"
-      NUM_CLASSES="${NUM_CLASSES:-10}"
-      NUM_CONTROL_PTS="${NUM_CONTROL_PTS:-28}"
-      PREPROCESS_SCRIPT="${REPO_DIR}/scripts/preprocess_tri.sh"
-      : "${BATCH_SIZE:=4}"
-      ;;
-    *)
-      echo "[branch.sh] ERROR: unknown dataset $1"
-      exit 1
-      ;;
-  esac
+  configure_dataset_base "$1"
+  apply_task_layout
 }
 
 ensure_dataset_ready() {
@@ -301,6 +278,7 @@ find_matching_runs() {
   while IFS= read -r meta_file; do
     mapfile -t parsed < <(metadata_matches "${meta_file}" "${model_id}" "${branch}" "${dataset}" || true)
     [[ ${#parsed[@]} -eq 5 ]] || continue
+    [[ "${parsed[0]}" == "${RESULTS_DATASET_NAME}" ]] || continue
     local run_dir ckpt
     run_dir="$(dirname "${meta_file}")"
     if [[ -f "${run_dir}/best.ckpt" ]]; then
@@ -312,6 +290,7 @@ find_matching_runs() {
     fi
     mapfile -t info < <(describe_run_dir "${run_dir}" "${model_id}" "${branch}" "${dataset}")
     [[ ${#info[@]} -eq 5 ]] || continue
+    [[ "${info[0]}" == "${RESULTS_DATASET_NAME}/"* ]] || continue
     add_run "${info[1]}" "${info[2]}" "${info[0]}" "${info[3]}" "${info[4]}"
   done < <(find "${RESULTS_DIR}" -name experiment_metadata.json 2>/dev/null | sort)
 
@@ -323,6 +302,7 @@ find_matching_runs() {
     [[ -n "${seen_dirs[$run_dir]:-}" ]] && continue
     mapfile -t info < <(describe_run_dir "${run_dir}" "${model_id}" "${branch}" "${dataset}")
     [[ ${#info[@]} -eq 5 ]] || continue
+    [[ "${info[0]}" == "${RESULTS_DATASET_NAME}/"* ]] || continue
     add_run "${info[1]}" "${info[2]}" "${info[0]}" "${info[3]}" "${info[4]}"
   done < <(find "${RESULTS_DIR}" \( -name 'best.ckpt' -o -name 'last.ckpt' \) 2>/dev/null | sort -u)
 
@@ -381,7 +361,7 @@ append_model_metadata_args() {
 
 invoke_segmentation_test() {
   local batch_size num_workers gpu
-  batch_size="${BATCH_SIZE:-16}"
+  batch_size="${BATCH_SIZE}"
   num_workers="${NUM_WORKERS:-4}"
   gpu="${GPU:-0}"
 
@@ -550,11 +530,16 @@ run_train() {
   RUN_TAG="${SELECTED_MODEL_RUN_TAG}"
   run_tag="$(resolve_run_tag "${SELECTED_MODEL_BRANCH}")"
   local batch_size num_workers gpu max_epochs experiment_note
-  batch_size="${BATCH_SIZE:-16}"
+  batch_size="${BATCH_SIZE}"
   num_workers="${NUM_WORKERS:-4}"
   gpu="${GPU:-0}"
   max_epochs="${MAX_EPOCHS:-1000}"
   experiment_note="${EXPERIMENT_NOTE:-}"
+
+  if [[ "${TASK}" == "cls" ]]; then
+    run_classification_train "${batch_size}" "${num_workers}" "${gpu}" "${experiment_note}"
+    return 0
+  fi
 
   if [[ -z "${experiment_note}" ]]; then
     echo "" >&2
@@ -591,10 +576,12 @@ run_train() {
     train_args+=(--experiment_note "${experiment_note}")
   fi
 
-  echo "[branch.sh] train"
+  echo "[branch.sh] train (${TASK})"
   echo "  model           : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT} (${SELECTED_MODEL_STATUS})"
   echo "  branch          : ${SELECTED_MODEL_BRANCH}"
   echo "  dataset         : ${DATASET_ID}"
+  echo "  task            : ${TASK} — ${TASK_LABEL}"
+  echo "  entry           : ${TRAIN_ENTRY}"
   echo "  batch_size      : ${batch_size}"
   echo "  dataset_dir     : ${DATASET_DIR}"
   echo "  results_path    : results/${experiment_name}/${log_date}/${run_tag}"
@@ -610,12 +597,38 @@ run_train() {
   fi
 
   mkdir -p logs
-  python segmentation.py train \
+  python "${TRAIN_ENTRY}" train \
     "${train_args[@]}" \
     2>&1 | tee "logs/train_${model_tag}_${DATASET_ID}_$(date +%m%d_%H%M%S).log"
 }
 
+run_classification_train() {
+  local batch_size="$1"
+  local num_workers="$2"
+  local gpu="$3"
+  local experiment_note="$4"
+
+  echo "[branch.sh] train (cls — infra WIP)"
+  echo "  model       : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT}"
+  echo "  dataset     : ${DATASET_ID}"
+  echo "  task        : ${TASK} — ${TASK_LABEL}"
+  echo "  entry       : ${TRAIN_ENTRY}"
+  echo "  note        : metadata / resume / test / viz 尚未接入；结果路径为旧版 HHMMSS layout" >&2
+
+  mkdir -p logs
+  python classification.py train \
+    --num_classes "${NUM_CLASSES}" \
+    --dataset_dir "${DATASET_DIR}" \
+    --batch_size "${batch_size}" \
+    --num_workers "${num_workers}" \
+    --gpu "${gpu}" \
+    --num_control_pts "${NUM_CONTROL_PTS}" \
+    --experiment_name "${RESULTS_DATASET_NAME}" \
+    2>&1 | tee "logs/train_cls_${SELECTED_MODEL_ID}_${DATASET_ID}_$(date +%m%d_%H%M%S).log"
+}
+
 run_resume() {
+  task_supports_mode "resume"
   pick_run "${SELECTED_MODEL_ID}" "${SELECTED_MODEL_BRANCH}" "${DATASET_ID}"
   ensure_dataset_ready
   parse_run_dir_layout "${SELECTED_RUN_DIR}"
@@ -639,7 +652,7 @@ run_resume() {
   fi
 
   model_tag="$(sanitize_name "${SELECTED_MODEL_ID}")"
-  batch_size="${BATCH_SIZE:-16}"
+  batch_size="${BATCH_SIZE}"
   num_workers="${NUM_WORKERS:-4}"
   gpu="${GPU:-0}"
   max_epochs="${MAX_EPOCHS:-1000}"
@@ -684,6 +697,7 @@ run_resume() {
 }
 
 run_test() {
+  task_supports_mode "test"
   pick_run "${SELECTED_MODEL_ID}" "${SELECTED_MODEL_BRANCH}" "${DATASET_ID}"
   ensure_dataset_ready
 
@@ -696,6 +710,7 @@ run_test() {
 }
 
 run_viz() {
+  task_supports_mode "viz"
   local format viz_action
   pick_run "${SELECTED_MODEL_ID}" "${SELECTED_MODEL_BRANCH}" "${DATASET_ID}"
   ensure_dataset_ready
@@ -765,14 +780,20 @@ main() {
     exit 1
   fi
 
+  if [[ ! -f "${REPO_DIR}/scripts/task_config.sh" ]]; then
+    echo "[branch.sh] ERROR: scripts/task_config.sh 缺失 — 请从 main 工作区运行 branch.sh，或 git merge main。" >&2
+    exit 1
+  fi
+
   load_model_registry
   if [[ ${#MODEL_LABELS[@]} -eq 0 ]]; then
     echo "[branch.sh] ERROR: model_registry.tsv 为空。" >&2
     exit 1
   fi
 
-  local model_label dataset mode
+  local model_label dataset task_pick mode
   echo "[branch.sh] 仓库: ${REPO_DIR}" >&2
+  echo "[branch.sh] infra registry: BRT_INFRA_REF=${BRT_INFRA_REF:-main} (模型代码 checkout 到 registry git_ref)" >&2
   pick_from_list model_label "选择模型 (pinned commit):" "${MODEL_LABELS[@]}"
   resolve_model_by_label "${model_label}"
   checkout_model_ref "${SELECTED_MODEL_REF}" "${SELECTED_MODEL_BRANCH}"
@@ -781,6 +802,15 @@ main() {
   fi
 
   pick_from_list dataset "选择数据集:" "360" "mechcad"
+  if [[ "${dataset}" == "mechcad" && -z "${BRT_TASK:-}" ]]; then
+    pick_from_list task_pick "MechCAD 任务:" \
+      "seg (零件类→每面广播, 走 segmentation.py)" \
+      "cls (原生零件分类, WIP)"
+    task_pick="${task_pick%% *}"
+    resolve_brt_task "${dataset}" "${task_pick}"
+  else
+    resolve_brt_task "${dataset}"
+  fi
   configure_dataset "${dataset}"
 
   pick_from_list mode "选择操作:" "train" "resume" "test" "viz"

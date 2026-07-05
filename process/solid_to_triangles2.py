@@ -543,7 +543,7 @@ def process_parallel_with_timeout(work_files, args):
                             ok_count += 1
                         elif status == "err":
                             append_skip_log(skip_log, fn, detail)
-                            logging.warning("[%s] Failed: %s", current_anchor(), detail)
+                            logging.warning("Failed: %s", detail)
                     bar.update(1)
                     continue
 
@@ -598,7 +598,7 @@ def process_sequential_with_timeout(work_files, args):
             ok_count += 1
         elif status == "err":
             append_skip_log(skip_log, fn, detail)
-            logging.warning("[%s] Failed: %s", current_anchor(), detail)
+            logging.warning("Failed: %s", detail)
 
     print(f"Processed {ok_count} files.")
 
@@ -902,7 +902,7 @@ def process_one_file(arguments):
                 args.failure_log,
                 make_failure_record(step_path=fn, stage="load_step", exc=exc),
             )
-        logging.exception("[%s] Read Step Error", current_anchor())
+        logging.exception("Read Step Error")
         return False
 
     graph = False
@@ -926,10 +926,10 @@ def process_one_file(arguments):
                     solid_index=solid_index,
                 ),
             )
-        logging.exception("[%s] Found Value Error", current_anchor())
+        logging.exception("Found Value Error")
         return False
     except Exception as exc:
-        logging.exception("[%s] Build Error", current_anchor())
+        logging.exception("Build Error")
         return False
 
     return graph

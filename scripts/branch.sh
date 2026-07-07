@@ -510,30 +510,10 @@ run_train() {
     fi
   fi
 
-  local train_args=(
-    --num_classes "${NUM_CLASSES}"
-    --dataset_dir "${DATASET_DIR}"
-    --batch_size "${batch_size}"
-    --num_workers "${num_workers}"
-    --gpu "${gpu}"
-    --num_control_pts "${NUM_CONTROL_PTS}"
-    --experiment_name "${experiment_name}"
-    --log_name "${log_date}"
-    --run_tag "${run_tag}"
-    --max_epochs "${max_epochs}"
-    --git_branch "${SELECTED_MODEL_BRANCH}"
-    --dataset_id "${DATASET_ID}"
-  )
-  append_model_metadata_args train_args
-  if [[ -n "${RESUME_FROM:-}" ]]; then
-    train_args+=(--resume_from "${RESUME_FROM}")
-  fi
-  if [[ -n "${SPLIT_SOURCE_JSON:-}" && "${TASK}" == "seg" ]]; then
-    train_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
-  fi
-  if [[ -n "${experiment_note}" ]]; then
-    train_args+=(--experiment_note "${experiment_note}")
-  fi
+  local train_args=()
+  build_brt_train_args train_args \
+    "${experiment_name}" "${log_date}" "${run_tag}" "${max_epochs}" \
+    "${batch_size}" "${num_workers}" "${gpu}" "${experiment_note}"
 
   echo "[branch.sh] train (${TASK})"
   echo "  model           : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT} (${SELECTED_MODEL_STATUS})"
@@ -543,7 +523,11 @@ run_train() {
   echo "  entry           : ${TRAIN_ENTRY}"
   echo "  batch_size      : ${batch_size}"
   echo "  dataset_dir     : ${DATASET_DIR}"
-  echo "  results_path    : results/${experiment_name}/${log_date}/${run_tag}"
+  if ! train_entry_supports_arg "--log_name"; then
+    echo "  results_path    : (legacy ${TRAIN_ENTRY} layout; 无 run_tag 路径)" >&2
+  else
+    echo "  results_path    : results/${experiment_name}/${log_date}/${run_tag}"
+  fi
   if [[ -n "${SPLIT_SOURCE_JSON:-}" && "${TASK}" == "seg" ]]; then
     echo "  split_source    : ${SPLIT_SOURCE_JSON}"
   fi

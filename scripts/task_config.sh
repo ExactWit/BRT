@@ -71,7 +71,7 @@ apply_task_layout() {
     mechcad:cls)
       RESULTS_DATASET_NAME="mechcad_cls"
       TRAIN_ENTRY="classification.py"
-      TASK_LABEL="part classification (native; infra WIP)"
+      TASK_LABEL="part classification (native; resume/test WIP)"
       ;;
     *)
       echo "[task_config] ERROR: 未配置 ${DATASET_ID}:${TASK}" >&2

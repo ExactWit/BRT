@@ -1,0 +1,75 @@
+---
+description: BRT 仓库开发 SOP — main/scheme 分工、branch.sh、model registry
+alwaysApply: true
+---
+
+# BRT 开发 SOP
+
+## 分支职责
+
+| 分支 | 只改什么 |
+|------|----------|
+| `main` | 公共 infra：`scripts/branch.sh`、`scripts/model_registry.*`、`scripts/task_config.sh`、`segmentation.py`、`classification.py`、`utils/`、`process/`、`docs/` |
+| `scheme-*` | **仅**方案代码：`models/`、`tests/`、必要时 `models/brt.py` 切换 topo 层 |
+
+- 新方案：**从 main 最新 infra 分出**，不要从旧 scheme 分支再分。
+- scheme 需要 infra 更新：`git merge main`（不要 cherry-pick 多文件 infra）。
+- infra 冲突时：**launcher/registry 以 main 为准**，保留 scheme 的 `models/` / `tests/`。
+
+## 实验入口：只用 `branch.sh`
+
+```bash
+cd ~/workspace/repo/BRT
+git checkout main          # launcher 本体应在 main（或已 merge main 的分支）
+bash scripts/branch.sh
+```
+
+**不要**在 `branch.sh` 开头硬编码 `git checkout main`。Registry 用指针读：
+
+| 变量 | 默认 | 作用 |
+|------|------|------|
+| `BRT_INFRA_REF` | `main` | `git show $BRT_INFRA_REF:scripts/model_registry.tsv` 读 registry，**不切换工作区** |
+| `BRT_TASK` | 交互 | mechcad：`seg`（默认）或 `cls`；设后跳过任务菜单 |
+
+流程：读 registry → checkout **模型 git_ref** → 选 dataset/task → train/resume/test/viz。
+
+## Model registry
+
+- 表：`scripts/model_registry.tsv`（在 **main** 编辑并提交）
+- 新模型/更新 pin：main 加一行 → scheme 分支 `merge main`
+- 字段：`id` / `git_ref` / `branch` / `run_tag` / `status` / `metrics_doc`
+- 归档模型改 pin 时保留旧 hash 文档（如 Fusion360 360 结果仍指原 commit）
+
+## 数据集与任务
+
+| dataset | task | 脚本 | results 桶 | num_classes | batch |
+|---------|------|------|------------|-------------|-------|
+| 360 | seg | `segmentation.py` | `fusion360_seg` | 8 | 16 |
+| mechcad | seg | `segmentation.py` | `mechcad_seg` | 10 | 4 |
+| mechcad | cls | `classification.py` | `mechcad_cls` | 10 | 16（WIP：仅 train） |
+
+- **当前对比实验走 mechcad seg**：零件类广播到每面，**看 acc**；IoU 在标签全相同时无独立意义。
+- mechcad cls：`results/mechcad_cls/<MMDD>/<run_tag>/`（与 seg 同 layout，`run_tag` 来自 registry）
+
+## Results 路径
+
+```text
+results/<dataset_bucket>/<MMDD>/<run_tag>/
+```
+
+- `run_tag` 来自 registry 或 `resolve_run_tag`
+- resume/test/viz 按 `model.id` + dataset + **results 桶**（如 `mechcad_seg`）过滤 run
+
+## 新 scheme 检查清单
+
+1. `git checkout main && git pull` → `git checkout -b scheme-x-...`
+2. 只改 `models/`、`tests/`
+3. 训练验证后，在 main 更新 `model_registry.tsv` 登记 `git_ref`
+4. `git merge main` 同步 launcher 到其他 scheme 分支（如有需要）
+5. 实验：`bash scripts/branch.sh` 选 model → dataset → task → train
+
+## 禁止
+
+- 在 scheme 分支单独改 `branch.sh` / registry 而不 merge 回 main
+- 从 detached 旧 commit 直接跑旧版 `branch.sh`（缺 `task_config.sh` 会报错）
+- mechcad 用 `NUM_CLASSES=25`（应为 10）

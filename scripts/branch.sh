@@ -536,11 +536,6 @@ run_train() {
   max_epochs="${MAX_EPOCHS:-1000}"
   experiment_note="${EXPERIMENT_NOTE:-}"
 
-  if [[ "${TASK}" == "cls" ]]; then
-    run_classification_train "${batch_size}" "${num_workers}" "${gpu}" "${experiment_note}"
-    return 0
-  fi
-
   if [[ -z "${experiment_note}" ]]; then
     echo "" >&2
     echo "实验备注（可选，直接回车跳过）：" >&2
@@ -569,7 +564,7 @@ run_train() {
   if [[ -n "${RESUME_FROM:-}" ]]; then
     train_args+=(--resume_from "${RESUME_FROM}")
   fi
-  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
+  if [[ -n "${SPLIT_SOURCE_JSON:-}" && "${TASK}" == "seg" ]]; then
     train_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
   fi
   if [[ -n "${experiment_note}" ]]; then
@@ -585,7 +580,7 @@ run_train() {
   echo "  batch_size      : ${batch_size}"
   echo "  dataset_dir     : ${DATASET_DIR}"
   echo "  results_path    : results/${experiment_name}/${log_date}/${run_tag}"
-  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
+  if [[ -n "${SPLIT_SOURCE_JSON:-}" && "${TASK}" == "seg" ]]; then
     echo "  split_source    : ${SPLIT_SOURCE_JSON}"
   fi
   if [[ -n "${experiment_note}" ]]; then
@@ -599,32 +594,7 @@ run_train() {
   mkdir -p logs
   python "${TRAIN_ENTRY}" train \
     "${train_args[@]}" \
-    2>&1 | tee "logs/train_${model_tag}_${DATASET_ID}_$(date +%m%d_%H%M%S).log"
-}
-
-run_classification_train() {
-  local batch_size="$1"
-  local num_workers="$2"
-  local gpu="$3"
-  local experiment_note="$4"
-
-  echo "[branch.sh] train (cls — infra WIP)"
-  echo "  model       : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT}"
-  echo "  dataset     : ${DATASET_ID}"
-  echo "  task        : ${TASK} — ${TASK_LABEL}"
-  echo "  entry       : ${TRAIN_ENTRY}"
-  echo "  note        : metadata / resume / test / viz 尚未接入；结果路径为旧版 HHMMSS layout" >&2
-
-  mkdir -p logs
-  python classification.py train \
-    --num_classes "${NUM_CLASSES}" \
-    --dataset_dir "${DATASET_DIR}" \
-    --batch_size "${batch_size}" \
-    --num_workers "${num_workers}" \
-    --gpu "${gpu}" \
-    --num_control_pts "${NUM_CONTROL_PTS}" \
-    --experiment_name "${RESULTS_DATASET_NAME}" \
-    2>&1 | tee "logs/train_cls_${SELECTED_MODEL_ID}_${DATASET_ID}_$(date +%m%d_%H%M%S).log"
+    2>&1 | tee "logs/train_${model_tag}_${DATASET_ID}_${TASK}_$(date +%m%d_%H%M%S).log"
 }
 
 run_resume() {

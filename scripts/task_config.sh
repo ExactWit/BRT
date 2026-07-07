@@ -71,7 +71,7 @@ apply_task_layout() {
     mechcad:cls)
       RESULTS_DATASET_NAME="mechcad_cls"
       TRAIN_ENTRY="classification.py"
-      TASK_LABEL="part classification (native; resume/test WIP)"
+      TASK_LABEL="part classification (native; resume/viz WIP)"
       ;;
     *)
       echo "[task_config] ERROR: 未配置 ${DATASET_ID}:${TASK}" >&2
@@ -82,8 +82,8 @@ apply_task_layout() {
 
 task_supports_mode() {
   local mode="$1"
-  if [[ "${TASK}" == "cls" && "${mode}" != "train" ]]; then
-    echo "[branch.sh] ERROR: mechcad classification 的 ${mode} 尚未接入 branch.sh（请先用 seg，或手动 classification.py test）。" >&2
+  if [[ "${TASK}" == "cls" && "${mode}" != "train" && "${mode}" != "test" ]]; then
+    echo "[branch.sh] ERROR: mechcad classification 的 ${mode} 尚未接入 branch.sh（train/test 已支持）。" >&2
     exit 1
   fi
 }

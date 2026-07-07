@@ -49,7 +49,8 @@ bash scripts/branch.sh
 | mechcad | cls | `classification.py` | `mechcad_cls` | 10 | 16（WIP：仅 train） |
 
 - **当前对比实验走 mechcad seg**：零件类广播到每面，**看 acc**；IoU 在标签全相同时无独立意义。
-- mechcad cls：`results/mechcad_cls/<MMDD>/<run_tag>/`（与 seg 同 layout，`run_tag` 来自 registry）
+- 公共 test 调用：`scripts/train_invoke.sh`（`invoke_brt_test`）；Python 侧 `utils/experiment_metadata.build_test_metadata`
+- mechcad cls：`branch.sh` train/test 已接；resume/viz 待接
 
 ## Results 路径
 

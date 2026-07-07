@@ -14,8 +14,10 @@ import torch
 from utils.checkpoint_info import build_training_checkpoints_summary
 from utils.experiment_metadata import (
     build_experiment_metadata,
+    build_test_metadata,
     update_experiment_metadata,
     write_experiment_metadata as persist_experiment_metadata,
+    write_test_metadata,
 )
 
 parser = argparse.ArgumentParser("BRT Classification")
@@ -259,4 +261,20 @@ else:
     )
     model = ClassificationModel.load_from_checkpoint(args.checkpoint)
     results = trainer.test(model=model, dataloaders=[test_loader], verbose=True)
-    print(f"Classification loss on test set: {results[0]['test_loss']}")
+    metrics = results[0] if results else {}
+    ckpt_path = pathlib.Path(args.checkpoint)
+    run_dir_for_test = ckpt_path.parent
+    test_metadata = build_test_metadata(
+        repo_dir=repo_dir,
+        ckpt_path=ckpt_path,
+        metrics=metrics,
+        dataset_dir=pathlib.Path(args.dataset_dir),
+        dataset_id=args.dataset_id,
+        git_branch=args.git_branch,
+        task="classification",
+    )
+    write_test_metadata(run_dir_for_test / "test_metadata.json", test_metadata)
+    print(
+        f"Classification on test set: loss={metrics.get('test_loss')} "
+        f"acc={metrics.get('test_acc')}"
+    )

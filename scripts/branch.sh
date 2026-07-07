@@ -12,6 +12,8 @@ source "${REPO_DIR}/scripts/run_layout.sh"
 source "${REPO_DIR}/scripts/model_registry.sh"
 # shellcheck source=scripts/task_config.sh
 source "${REPO_DIR}/scripts/task_config.sh"
+# shellcheck source=scripts/train_invoke.sh
+source "${REPO_DIR}/scripts/train_invoke.sh"
 
 if [[ -f "${CONDA_SH}" ]]; then
   # shellcheck source=/dev/null
@@ -223,9 +225,13 @@ else:
 
 if test_path.exists():
     test = json.load(open(test_path, encoding="utf-8"))
-    iou = (test.get("metrics") or {}).get("test_iou")
+    metrics = test.get("metrics") or {}
+    iou = metrics.get("test_iou")
     if iou is not None:
         tags.append(f"iou={iou}")
+    acc = metrics.get("test_acc")
+    if acc is not None:
+        tags.append(f"acc={acc}")
     tags.append("tested")
 
 label = rel
@@ -342,48 +348,6 @@ pick_run() {
   exit 1
 }
 
-segmentation_supports_model_metadata() {
-  grep -q -- '--model_id' "${REPO_DIR}/segmentation.py" 2>/dev/null
-}
-
-append_model_metadata_args() {
-  local -n _args=$1
-  if [[ -n "${SELECTED_MODEL_ID:-}" ]] && segmentation_supports_model_metadata; then
-    _args+=(--model_id "${SELECTED_MODEL_ID}")
-    _args+=(--model_label "${SELECTED_MODEL_LABEL}")
-    _args+=(--model_commit "${SELECTED_MODEL_COMMIT}")
-    _args+=(--model_commit_full "${SELECTED_MODEL_COMMIT_FULL}")
-    _args+=(--model_status "${SELECTED_MODEL_STATUS}")
-  elif [[ -n "${SELECTED_MODEL_ID:-}" ]]; then
-    echo "[branch.sh] 注意: 当前 checkout 的 segmentation.py 不支持 model metadata CLI，已跳过 --model_id 等参数。" >&2
-  fi
-}
-
-invoke_segmentation_test() {
-  local batch_size num_workers gpu
-  batch_size="${BATCH_SIZE}"
-  num_workers="${NUM_WORKERS:-4}"
-  gpu="${GPU:-0}"
-
-  local test_args=(
-    --num_classes "${NUM_CLASSES}"
-    --dataset_dir "${DATASET_DIR}"
-    --batch_size "${batch_size}"
-    --num_workers "${num_workers}"
-    --gpu "${gpu}"
-    --num_control_pts "${NUM_CONTROL_PTS}"
-    --checkpoint "${SELECTED_CHECKPOINT}"
-    --git_branch "${SELECTED_MODEL_BRANCH}"
-    --dataset_id "${DATASET_ID}"
-  )
-  append_model_metadata_args test_args
-  if [[ -n "${SPLIT_SOURCE_JSON:-}" ]]; then
-    test_args+=(--split_source_json "${SPLIT_SOURCE_JSON}")
-  fi
-
-  python segmentation.py test "${test_args[@]}"
-}
-
 ensure_test_per_sample() {
   local per_sample="${SELECTED_RUN_DIR}/test_per_sample.json"
   if python3 - "${per_sample}" "${SELECTED_CHECKPOINT}" "${DATASET_DIR}" <<'PY'
@@ -409,7 +373,7 @@ PY
 
   echo "[branch.sh] 未找到有效的 per-sample test 结果 (${per_sample})" >&2
   echo "[branch.sh] 自动运行 test 以记录每个 test 样本的 iou/acc..." >&2
-  invoke_segmentation_test
+  invoke_brt_test
 }
 
 list_test_samples() {
@@ -671,12 +635,13 @@ run_test() {
   pick_run "${SELECTED_MODEL_ID}" "${SELECTED_MODEL_BRANCH}" "${DATASET_ID}"
   ensure_dataset_ready
 
-  echo "[branch.sh] test"
+  echo "[branch.sh] test (${TASK})"
   echo "  model       : ${SELECTED_MODEL_ID} @ ${SELECTED_MODEL_COMMIT}"
+  echo "  entry       : ${TRAIN_ENTRY}"
   echo "  checkpoint  : ${SELECTED_CHECKPOINT}"
   echo "  dataset_dir : ${DATASET_DIR}"
 
-  invoke_segmentation_test
+  invoke_brt_test
 }
 
 run_viz() {

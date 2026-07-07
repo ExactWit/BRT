@@ -346,7 +346,7 @@ results/<dataset>/<date>/<tag>/
 
 **MechCAD seg 说明：** 零件类别 ID 广播到每个面，用 per-face seg 框架做零件分类；**acc 为主指标**，IoU 在标签全相同时与 acc 等价。
 
-**MechCAD cls 路径：** `results/mechcad_cls/<MMDD>/<run_tag>/`，`run_tag` 来自 registry（如 `schemea`、`baseline`）；与 seg 同 layout，含 `experiment_metadata.json`。resume/test 尚未接入 branch.sh。
+**MechCAD cls 路径：** `results/mechcad_cls/<MMDD>/<run_tag>/`；`branch.sh` 已支持 **train / test**（resume/viz 待接）。
 
 ### viz 输出
 

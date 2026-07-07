@@ -15,14 +15,13 @@ import torch
 
 from utils.checkpoint_info import (
     build_training_checkpoints_summary,
-    checkpoint_record,
 )
 from utils.experiment_metadata import (
     build_experiment_metadata,
-    collect_datasplit_info,
-    collect_git_info,
+    build_test_metadata,
     update_experiment_metadata,
     write_experiment_metadata as persist_experiment_metadata,
+    write_test_metadata,
 )
 from utils.test_per_sample import (
     PER_SAMPLE_FILENAME,
@@ -318,48 +317,28 @@ else:
                            test_loader], verbose=True)
     metrics = results[0] if results else {}
     ckpt_path = pathlib.Path(args.checkpoint)
-    ckpt_info = checkpoint_record(ckpt_path) or {}
     run_dir_for_test = ckpt_path.parent
-    exp_meta_path = run_dir_for_test / "experiment_metadata.json"
-    experiment_ref = None
-    if exp_meta_path.exists():
-        with open(exp_meta_path, encoding="utf-8") as f:
-            experiment_ref = json.load(f)
-    test_metadata = {
-        "schema_version": 1,
-        "tested_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "checkpoint": str(ckpt_path.resolve()),
-        "checkpoint_kind": ckpt_path.name.replace(".ckpt", ""),
-        "checkpoint_epoch": ckpt_info.get("epoch"),
-        "checkpoint_epoch_1based": ckpt_info.get("epoch_1based"),
-        "checkpoint_val_iou": ckpt_info.get("val_iou"),
-        "git": collect_git_info(repo_dir, branch=args.git_branch),
-        "dataset": {
-            "id": args.dataset_id,
-            "processed_dir": str(pathlib.Path(args.dataset_dir).resolve()),
-        },
-        "datasplit": collect_datasplit_info(
-            pathlib.Path(args.dataset_dir),
-            dataset_id=args.dataset_id,
-            split_source_json=args.split_source_json,
-        ),
-        "metrics": metrics,
-        "per_sample_path": str((run_dir_for_test / PER_SAMPLE_FILENAME).resolve()),
-        "experiment_metadata_path": str(exp_meta_path.resolve()) if exp_meta_path.exists() else None,
-        "experiment_run": (experiment_ref or {}).get("run"),
-        # legacy flat keys for older tooling
-        "git_branch": args.git_branch,
-        "dataset": args.dataset_id,
-        "dataset_dir": args.dataset_dir,
-    }
-    write_json(run_dir_for_test / "test_metadata.json", test_metadata)
+    per_sample_path = run_dir_for_test / PER_SAMPLE_FILENAME
+    test_metadata = build_test_metadata(
+        repo_dir=repo_dir,
+        ckpt_path=ckpt_path,
+        metrics=metrics,
+        dataset_dir=pathlib.Path(args.dataset_dir),
+        dataset_id=args.dataset_id,
+        git_branch=args.git_branch,
+        split_source_json=args.split_source_json,
+        task="segmentation",
+        per_sample_path=per_sample_path,
+    )
+    write_test_metadata(run_dir_for_test / "test_metadata.json", test_metadata)
     per_sample_payload = build_per_sample_payload(
         samples=getattr(model, "per_sample_test_results", []),
         checkpoint=ckpt_path,
         dataset_dir=pathlib.Path(args.dataset_dir),
         dataset_id=args.dataset_id,
     )
-    write_per_sample_results(run_dir_for_test / PER_SAMPLE_FILENAME, per_sample_payload)
+    write_per_sample_results(per_sample_path, per_sample_payload)
     print(
-        f"Classfication Loss on test set: {metrics.get('test_loss')}"
+        f"Segmentation on test set: loss={metrics.get('test_loss')} "
+        f"iou={metrics.get('test_iou')} acc={metrics.get('test_acc')}"
     )

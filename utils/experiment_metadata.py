@@ -265,3 +265,63 @@ def meta_num_classes(meta: dict[str, Any]) -> int | None:
 
 def meta_note(meta: dict[str, Any]) -> str:
     return (meta.get("note") or "").strip()
+
+
+def build_test_metadata(
+    *,
+    repo_dir: pathlib.Path,
+    ckpt_path: pathlib.Path,
+    metrics: dict[str, Any],
+    dataset_dir: pathlib.Path,
+    dataset_id: str | None = None,
+    git_branch: str | None = None,
+    split_source_json: str | None = None,
+    task: str = "segmentation",
+    per_sample_path: pathlib.Path | None = None,
+    ckpt_info: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from utils.checkpoint_info import checkpoint_record
+
+    ckpt_path = ckpt_path.resolve()
+    run_dir = ckpt_path.parent
+    ckpt_info = ckpt_info or checkpoint_record(ckpt_path) or {}
+    exp_meta_path = run_dir / "experiment_metadata.json"
+    experiment_ref = load_experiment_metadata(exp_meta_path)
+
+    payload: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "task": task,
+        "tested_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "checkpoint": str(ckpt_path),
+        "checkpoint_kind": ckpt_path.name.replace(".ckpt", ""),
+        "checkpoint_epoch": ckpt_info.get("epoch"),
+        "checkpoint_epoch_1based": ckpt_info.get("epoch_1based"),
+        "git": collect_git_info(repo_dir, branch=git_branch),
+        "dataset": {
+            "id": dataset_id,
+            "processed_dir": str(dataset_dir.resolve()),
+        },
+        "datasplit": collect_datasplit_info(
+            dataset_dir,
+            dataset_id=dataset_id,
+            split_source_json=split_source_json,
+        ),
+        "metrics": metrics,
+        "experiment_metadata_path": str(exp_meta_path.resolve()) if exp_meta_path.exists() else None,
+        "experiment_run": (experiment_ref or {}).get("run"),
+        "git_branch": git_branch,
+        "dataset_dir": str(dataset_dir.resolve()),
+    }
+    if ckpt_info.get("val_iou") is not None:
+        payload["checkpoint_val_iou"] = ckpt_info.get("val_iou")
+    if ckpt_info.get("val_loss") is not None:
+        payload["checkpoint_val_loss"] = ckpt_info.get("val_loss")
+    if per_sample_path is not None:
+        payload["per_sample_path"] = str(per_sample_path.resolve())
+    if experiment_ref and experiment_ref.get("model"):
+        payload["model"] = experiment_ref["model"]
+    return payload
+
+
+def write_test_metadata(path: pathlib.Path, metadata: dict[str, Any]) -> None:
+    write_experiment_metadata(path, metadata)

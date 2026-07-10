@@ -1,5 +1,5 @@
 id	label	git_ref	branch	run_tag	status	metrics_doc
-baseline	BRT baseline (TopoEncoder)	ad21473	main	baseline	active	Fusion360 seg ~iou 74.5 / acc 93.6; mechcad label fallback @ ad21473
-scheme-a-v1	Scheme A v1 — empirical Boundary MP (archived)	1cf72df	scheme-a-boundary-mp	schemea	archived	Fusion360 seg iou 74.5→78.2 / acc 93.6→94.5; mechcad label fix @ 1cf72df; see docs/schemes/scheme-a-v1-archive.md
+baseline	BRT baseline (TopoEncoder)	ad21473	main	baseline	active	Fusion360 seg ~iou 74.5 / acc 93.6; mechcad seg acc ~74.8 @ ad21473
+scheme-a-v1	Scheme A v1 — empirical Boundary MP (archived)	4228e4d	scheme-a-boundary-mp	schemea	archived	Fusion360 seg iou 74.5→78.2 / acc 93.6→94.5; mechcad seg acc 74.8→75.2; see docs/schemes/scheme-a-v1-archive.md
 scheme-a2-wip	Scheme A2 — signed ∂₂, no avg (coedge)	bb14b54	scheme-a-boundary-mp	schemea2	wip	A2 ablation: signed boundary + linear sum vs A1; see docs/schemes/scheme-a2.md
 scheme-b-wip	Scheme B — Hodge block (WIP)	265da2b	scheme-b-hodge-block	schemeb	wip	not validated

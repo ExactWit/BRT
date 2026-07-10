@@ -12,6 +12,17 @@
 | test IoU | 74.5 | **78.2** (+3.7) |
 | test acc | 93.6 | **94.5** (+0.9) |
 
+## 实验结果（TMCAD / mechcad seg, best ckpt）
+
+零件类广播为 per-face 标签；**accuracy 为主要指标**。
+
+| 指标 | Baseline (`ad21473`) | Scheme A 分支 run |
+|------|----------------------|-------------------|
+| test acc | 74.8% | **75.2%** (+0.4 pp) |
+| test IoU | 60.6% | **61.1%** (+0.5 pp) |
+
+> run：`results/mechcad_seg/0705/baseline` vs `0706/schemea`（`1cf72df`，含 label broadcast 修复）。阶段复盘见 [`scheme-a-v1-retrospective.md`](./scheme-a-v1-retrospective.md)。
+
 > 以上为当前最佳 run 的汇总；具体 run 目录见 `results/fusion360_seg/<date>/schemea/`，metadata 中 `model.id == scheme-a-v1` 或 `git.branch == scheme-a-boundary-mp`。
 
 ## 理论构象 vs 当前实现

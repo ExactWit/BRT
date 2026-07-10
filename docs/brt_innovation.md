@@ -96,7 +96,7 @@ bash scripts/branch.sh
 
 **验证：** `tests/test_scheme_a_forward.py` — forward + backward + 梯度非零（已通过）
 
-**v1 归档（2026-06）：** Fusion360 seg test iou **74.5→78.2**，acc **93.6→94.5**。实现与理论 $\partial_2$ 有偏差（无符号、求平均、含 adj_face 聚合）；详见 [`docs/schemes/scheme-a-v1-archive.md`](schemes/scheme-a-v1-archive.md)。复现 ref：`scheme-a-v1` @ `4228e4d`。
+**v1 归档（2026-06）：** Fusion360 seg test iou **74.5→78.2**，acc **93.6→94.5**；mechcad seg acc **74.8→75.2**。实现与理论 $\partial_2$ 有偏差（无符号、求平均、含 adj_face 聚合）；详见 [`docs/schemes/scheme-a-v1-archive.md`](schemes/scheme-a-v1-archive.md) 与阶段复盘 [`scheme-a-v1-retrospective.md`](schemes/scheme-a-v1-retrospective.md)。复现 ref：`scheme-a-v1` @ `4228e4d`。
 
 **实现：** `models/boundary_topo_encoder.py` 中 `BoundaryOperatorTopoEncoder`，`models/brt.py` 已切换 topo 层。
 

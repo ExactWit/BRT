@@ -114,21 +114,38 @@ parser.add_argument(
     default=None,
     help="Free-form note for this experiment run",
 )
+parser.add_argument(
+    "--run_dir",
+    type=str,
+    default=None,
+    help="Experiment run root (exp_launcher --exp-dir); writes checkpoints/ and tensorboard/",
+)
 
 args = parser.parse_args()
 repo_dir = pathlib.Path(__file__).parent
 experiment_name = args.experiment_name
 
 torch.set_float32_matmul_precision(args.precision)
-results_path = repo_dir.joinpath("results").joinpath(experiment_name)
-results_path.mkdir(parents=True, exist_ok=True)
 
 month_day = time.strftime("%m%d")
 hour_min_second = time.strftime("%H%M%S")
 log_name = args.log_name or month_day
 log_version = args.run_tag or args.log_version or hour_min_second
-run_dir = results_path.joinpath(log_name, log_version)
 run_tag = log_version
+
+if args.run_dir:
+    run_dir = pathlib.Path(args.run_dir)
+    results_path = run_dir
+    checkpoint_dir = run_dir / "checkpoints"
+    tensorboard_dir = run_dir / "tensorboard"
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    tensorboard_dir.mkdir(parents=True, exist_ok=True)
+else:
+    results_path = repo_dir.joinpath("results").joinpath(experiment_name)
+    results_path.mkdir(parents=True, exist_ok=True)
+    run_dir = results_path.joinpath(log_name, log_version)
+    checkpoint_dir = run_dir
+    tensorboard_dir = results_path
 
 
 def write_experiment_metadata() -> None:
@@ -169,14 +186,14 @@ def write_experiment_metadata() -> None:
 
 checkpoint_callback = ModelCheckpoint(
     monitor="val_loss",
-    dirpath=str(run_dir),
+    dirpath=str(checkpoint_dir),
     filename="best",
     save_last=True,
 )
 
 trainer = Trainer(
     callbacks=[checkpoint_callback],
-    logger=TensorBoardLogger(str(results_path), name=log_name, version=log_version),
+    logger=TensorBoardLogger(str(tensorboard_dir), name=log_name, version=log_version),
     devices=[args.gpu],
     accelerator="gpu",
     max_epochs=args.max_epochs,
@@ -263,7 +280,12 @@ else:
     results = trainer.test(model=model, dataloaders=[test_loader], verbose=True)
     metrics = results[0] if results else {}
     ckpt_path = pathlib.Path(args.checkpoint)
-    run_dir_for_test = ckpt_path.parent
+    if args.run_dir:
+        run_dir_for_test = pathlib.Path(args.run_dir)
+        test_meta_path = run_dir_for_test / "metrics" / "test.json"
+    else:
+        run_dir_for_test = ckpt_path.parent
+        test_meta_path = run_dir_for_test / "test_metadata.json"
     test_metadata = build_test_metadata(
         repo_dir=repo_dir,
         ckpt_path=ckpt_path,
@@ -273,7 +295,7 @@ else:
         git_branch=args.git_branch,
         task="classification",
     )
-    write_test_metadata(run_dir_for_test / "test_metadata.json", test_metadata)
+    write_test_metadata(test_meta_path, test_metadata)
     print(
         f"Classification on test set: loss={metrics.get('test_loss')} "
         f"acc={metrics.get('test_acc')}"
